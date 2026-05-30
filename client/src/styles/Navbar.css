@@ -1,0 +1,74 @@
+.Navbar {
+  width: 100%;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  padding: 20px 0;
+}
+
+.container {
+  max-width: 998px;
+  width: 90vw;
+  margin: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.container a {
+  text-decoration: none;
+}
+.container h1 {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 25px;
+}
+
+.go-home {
+  display: flex;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.8);
+  background-color: #3434bb;
+  padding: 5px 15px;
+  border-radius: 30px;
+}
+.go-home svg {
+  margin-right: 5px;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+}
+
+.user-selector input {
+  width: 56px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 4px 6px;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.user-selector input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+
+@media (max-width: 576px) {
+  .container {
+    flex-direction: column;
+  }
+  .container h1 {
+    margin-bottom: 15px;
+  }
+}

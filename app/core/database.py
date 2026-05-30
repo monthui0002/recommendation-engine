@@ -51,6 +51,28 @@ async def create_indexes() -> None:
     except Exception:
         pass
 
+    # Atlas Search index for full-text hybrid search (BM25 / Lucene)
+    try:
+        text_model = SearchIndexModel(
+            definition={
+                "mappings": {
+                    "dynamic": False,
+                    "fields": {
+                        "title": [{"type": "string", "analyzer": "lucene.standard"}],
+                        "description": [{"type": "string", "analyzer": "lucene.standard"}],
+                        "tags": [{"type": "string"}],
+                        "genres": [{"type": "string"}],
+                        "available": [{"type": "boolean"}],
+                    },
+                }
+            },
+            name="items_text_search_index",
+            type="search",
+        )
+        await db.items.create_search_index(model=text_model)
+    except Exception:
+        pass
+
 
 async def close_connections() -> None:
     await redis_client.aclose()

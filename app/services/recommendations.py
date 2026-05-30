@@ -138,6 +138,12 @@ async def content_based_rec(
             return await top_popular_items(limit)
 
     recs = [{"item": public_item(doc), "score": float(doc.get("recScore", 0)), "source": "content"} for doc in docs]
+
+    # Genre/tag affinity boost — personalises beyond pure embedding proximity
+    affinity = await user_genre_affinity(user_oid)
+    if affinity:
+        recs = apply_genre_affinity(recs, affinity)
+
     return await apply_context_boost(recs, context)
 
 
@@ -280,12 +286,21 @@ async def hybrid_rec(
     add_weighted_candidates(merged, collab, collab_weight)
 
     ranked = rerank_multi_objective(list(merged.values()), intent_tags)
+
+    # Genre/tag affinity boost — explicit preference on top of implicit vectors
+    affinity = await user_genre_affinity(user_oid)
+    if affinity:
+        ranked = apply_genre_affinity(ranked, affinity, strength=0.2)
+
     if not ranked:
         ranked = await top_popular_items(limit)
     filtered = await filtering_layer(user_oid, ranked)
     if not filtered:
         filtered = await top_popular_items(limit)
-    explored = await exploration_replace(user_oid, filtered[:limit], limit, rec_type)
+
+    # MMR diversity reranking — reduce genre/tag cluster redundancy
+    diverse = mmr_rerank(filtered, lambda_=0.7, limit=limit * 2)
+    explored = await exploration_replace(user_oid, diverse[:limit], limit, rec_type)
     return explored[:limit]
 
 
@@ -492,3 +507,183 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot / (left_norm * right_norm)
+
+
+# ─── Diversity re-ranking: Maximal Marginal Relevance (MMR) ───────────────────
+
+def _jaccard(a: set, b: set) -> float:
+    """Jaccard similarity between two tag/genre sets."""
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def mmr_rerank(
+    recs: list[dict[str, Any]],
+    lambda_: float = 0.7,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """
+    Maximal Marginal Relevance diversity reranking.
+
+        score_mmr(d) = λ * relevance(d) - (1-λ) * max_{s∈Selected} sim(d, s)
+
+    Balances relevance with diversity — prevents redundant genre/tag clusters
+    dominating the recommendation list. Similarity is Jaccard on tags+genres.
+    """
+    if len(recs) <= 1:
+        return recs[:limit]
+
+    max_score = max(r["score"] for r in recs) or 1.0
+    remaining = list(recs)
+    selected: list[dict[str, Any]] = []
+
+    while remaining and len(selected) < limit:
+        best_idx, best_mmr = 0, -float("inf")
+        for i, rec in enumerate(remaining):
+            relevance = rec["score"] / max_score
+            tags_i = set((rec["item"].get("tags") or []) + (rec["item"].get("genres") or []))
+            if not selected:
+                mmr_score = relevance
+            else:
+                max_sim = max(
+                    _jaccard(
+                        tags_i,
+                        set(
+                            (s["item"].get("tags") or [])
+                            + (s["item"].get("genres") or [])
+                        ),
+                    )
+                    for s in selected
+                )
+                mmr_score = lambda_ * relevance - (1 - lambda_) * max_sim
+            if mmr_score > best_mmr:
+                best_mmr, best_idx = mmr_score, i
+        selected.append(remaining.pop(best_idx))
+
+    return selected
+
+
+# ─── Genre / Tag affinity profile ─────────────────────────────────────────────
+
+async def user_genre_affinity(user_id: ObjectId) -> dict[str, float]:
+    """
+    Build a normalized genre+tag preference profile from interaction history.
+    Weights are time-decayed implicit scores, so recently watched genres
+    matter more than old ones.
+    Returns {genre_or_tag: affinity_weight} or {} on data sparsity.
+    """
+    try:
+        interactions = await with_timeout(
+            db.interactions.find({"userId": user_id})
+            .sort("timestamp", -1)
+            .limit(200)
+            .to_list(length=200)
+        )
+    except Exception:
+        return {}
+    if not interactions:
+        return {}
+
+    item_ids = list({doc["itemId"] for doc in interactions})
+    try:
+        items = await with_timeout(
+            db.items.find(
+                {"_id": {"$in": item_ids}}, {"genres": 1, "tags": 1}
+            ).to_list(length=len(item_ids))
+        )
+    except Exception:
+        return {}
+
+    item_map = {item["_id"]: item for item in items}
+    affinity: dict[str, float] = {}
+    for interaction in interactions:
+        item = item_map.get(interaction["itemId"])
+        if not item:
+            continue
+        weight = implicit_weight(interaction.get("type", "view"), interaction.get("score"))
+        weight = decay_score(weight, interaction.get("timestamp"))
+        for label in (item.get("genres") or []) + (item.get("tags") or []):
+            affinity[label] = affinity.get(label, 0.0) + weight
+
+    total = sum(affinity.values()) or 1.0
+    return {g: v / total for g, v in affinity.items()}
+
+
+def apply_genre_affinity(
+    recs: list[dict[str, Any]],
+    affinity: dict[str, float],
+    strength: float = 0.35,
+) -> list[dict[str, Any]]:
+    """
+    Multiplicatively boost candidates matching the user's genre/tag preferences.
+    strength=0.35 means a perfectly-matching item gets up to a +35% score lift.
+    """
+    for rec in recs:
+        item_tags = set(
+            (rec["item"].get("genres") or []) + (rec["item"].get("tags") or [])
+        )
+        boost = sum(affinity.get(g, 0.0) for g in item_tags)
+        rec["score"] *= 1.0 + boost * strength
+    return sorted(recs, key=lambda r: r["score"], reverse=True)
+
+
+# ─── Trending recommendations (interaction velocity) ──────────────────────────
+
+async def trending_items(
+    user_id: ObjectId,
+    limit: int = 20,
+    window_hours: int = 24,
+) -> list[dict[str, Any]]:
+    """
+    Surface items with high interaction velocity in the last `window_hours`.
+    Groups by itemId, counts interactions, joins to items collection, and
+    filters out already-seen items. Falls back to top-popular on cold start.
+    """
+    since = utcnow() - timedelta(hours=window_hours)
+    seen_ids = await seen_item_ids(user_id)
+
+    pipeline: list[dict[str, Any]] = [
+        {"$match": {"timestamp": {"$gte": since}, "itemId": {"$nin": seen_ids}}},
+        {
+            "$group": {
+                "_id": "$itemId",
+                "interactionCount": {"$sum": 1},
+                "totalScore": {"$sum": {"$ifNull": ["$score", 1.0]}},
+            }
+        },
+        {"$sort": {"interactionCount": -1, "totalScore": -1}},
+        {"$limit": limit * 3},
+        {
+            "$lookup": {
+                "from": "items",
+                "localField": "_id",
+                "foreignField": "_id",
+                "as": "itemDoc",
+            }
+        },
+        {"$unwind": "$itemDoc"},
+        {"$match": {"itemDoc.available": True}},
+        {"$limit": limit},
+    ]
+
+    try:
+        docs = await with_timeout(
+            db.interactions.aggregate(pipeline).to_list(length=limit)
+        )
+    except Exception:
+        docs = []
+
+    if docs:
+        return [
+            {
+                "item": public_item(doc["itemDoc"]),
+                "score": float(doc["interactionCount"]),
+                "trendScore": float(doc["interactionCount"]),
+                "source": "trending",
+            }
+            for doc in docs
+        ]
+
+    # Cold start: no recent interactions → fall back to popularity ranking
+    fallback = await top_popular_items(limit)
+    return [dict(rec, source="trending") for rec in fallback]
