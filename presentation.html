@@ -274,37 +274,43 @@
   <!-- ═══ SLIDE 5 — Recommendation pipeline ═══ -->
   <div class="slide">
     <h2>Recommendation Pipeline</h2>
-    <div style="max-width:860px;width:100%">
-      <div class="cols cols-3" style="margin-bottom:20px;gap:14px">
+    <div style="max-width:920px;width:100%">
+      <div class="cols cols-4" style="margin-bottom:18px;gap:12px">
         <div class="card blue">
           <h3>🧠 Content-Based</h3>
-          <p style="font-size:.88rem">Atlas Vector Search tìm phim gần nhất với <em>user profile embedding</em> (trung bình có trọng số của các phim đã xem). Boost theo Genre Affinity.</p>
+          <p style="font-size:.82rem">Atlas Vector Search — user profile embedding làm query vector. Fallback cosine in-memory.</p>
         </div>
         <div class="card purple">
           <h3>👥 Collaborative</h3>
-          <p style="font-size:.88rem">Tìm users tương đồng (cosine similarity trên embedding), lấy các phim họ đã click/mua/lưu mà user hiện tại chưa xem. Weight × user similarity.</p>
+          <p style="font-size:.82rem">Top-30 similar users × weighted overlap score → aggregate phim chưa xem.</p>
+        </div>
+        <div class="card teal" style="border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.07)">
+          <h3>🎯 Contextual</h3>
+          <p style="font-size:.82rem">Trên trang chi tiết phim: item-to-item similarity (vector + tag/title tokens). Weight <strong>×2.5</strong>.</p>
         </div>
         <div class="card pink">
-          <h3>🔀 Hybrid</h3>
-          <p style="font-size:.88rem">Kết hợp content + collaborative theo tỉ lệ. Áp dụng <strong>MMR reranking</strong> để cân bằng relevance &amp; diversity.</p>
+          <h3>🔀 Hybrid Merge</h3>
+          <p style="font-size:.82rem">3 nguồn chạy <strong>song song</strong>. Adaptive weight: context=2.5 / content=0.4 / collab=0.6.</p>
         </div>
       </div>
-      <div style="text-align:center;margin-bottom:16px">
-        <span style="font-size:.85rem;color:rgba(232,232,240,.5)">Shared post-processing:</span>
+      <div style="text-align:center;margin-bottom:12px">
+        <span style="font-size:.82rem;color:rgba(232,232,240,.45)">Post-processing pipeline (theo thứ tự):</span>
       </div>
-      <div class="flow" style="gap:10px">
-        <div class="flow-box">Filtering Layer<br/><small style="opacity:.6">loại đã xem</small></div>
+      <div class="flow" style="gap:8px">
+        <div class="flow-box">Normalize<br/><small style="opacity:.6">min-max [0,1]</small></div>
         <div class="flow-arrow">→</div>
-        <div class="flow-box">Genre Affinity<br/><small style="opacity:.6">boost yêu thích</small></div>
+        <div class="flow-box">Multi-obj Rerank<br/><small style="opacity:.6">× margin × fresh × intent</small></div>
         <div class="flow-arrow">→</div>
-        <div class="flow-box">MMR Rerank<br/><small style="opacity:.6">diversity λ=0.7</small></div>
+        <div class="flow-box">Genre Affinity<br/><small style="opacity:.6">+20% boost</small></div>
         <div class="flow-arrow">→</div>
-        <div class="flow-box">Time Decay<br/><small style="opacity:.6">e^(−λt)</small></div>
+        <div class="flow-box">Filter<br/><small style="opacity:.6">seen 7d + hidden</small></div>
         <div class="flow-arrow">→</div>
-        <div class="flow-box">Exploration<br/><small style="opacity:.6">5% random</small></div>
+        <div class="flow-box">MMR<br/><small style="opacity:.6">λ=0.7</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">Exploration<br/><small style="opacity:.6">10% swap</small></div>
         <div class="flow-arrow">→</div>
         <div class="flow-box" style="background:rgba(52,211,153,.1);border-color:rgba(52,211,153,.3)">
-          Redis Cache<br/><small style="opacity:.6">TTL 60s</small>
+          Cache<br/><small style="opacity:.6">TTL 60s</small>
         </div>
       </div>
     </div>
@@ -313,34 +319,40 @@
   <!-- ═══ SLIDE 6 — ML Techniques ═══ -->
   <div class="slide">
     <h2>Các kỹ thuật ML nổi bật</h2>
-    <div class="cols cols-2" style="max-width:900px;gap:18px">
+    <div class="cols cols-2" style="max-width:960px;gap:16px">
       <div class="card purple">
         <h3>📐 Maximal Marginal Relevance (MMR)</h3>
-        <p style="font-size:.88rem;margin-bottom:8px">Reranking để chống hiện tượng <em>filter bubble</em> — các kết quả quá giống nhau.</p>
-        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:10px;font-family:monospace;font-size:.82rem;color:#c4b5fd">
-          score = λ · sim(q, dᵢ) − (1−λ) · max sim(dᵢ, dⱼ)<br/>
-          <span style="color:rgba(255,255,255,.4)">// λ=0.7 trong Hybrid rec</span>
+        <p style="font-size:.85rem;margin-bottom:8px">Chống <em>filter bubble</em> — chọn từng item một, ưu tiên vừa relevant vừa khác với đã chọn.</p>
+        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:10px;font-family:monospace;font-size:.8rem;color:#c4b5fd">
+          score = λ · rel(dᵢ) − (1−λ) · max sim(dᵢ, dⱼ∈S)<br/>
+          <span style="color:rgba(255,255,255,.35)">// λ=0.7 · sim = Jaccard(tags+genres)</span>
+        </div>
+      </div>
+      <div class="card teal" style="border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.07)">
+        <h3>🎯 Source Multiplier</h3>
+        <p style="font-size:.85rem;margin-bottom:8px">Score của cùng một interaction nhân thêm hệ số theo <em>nguồn tương tác</em>:</p>
+        <div style="font-family:monospace;font-size:.82rem;line-height:1.9;color:#5eead4">
+          detail_page &nbsp;→ ×2.5<br/>
+          search &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ ×2.0<br/>
+          context &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ ×1.8<br/>
+          recommendation → ×1.3
         </div>
       </div>
       <div class="card blue">
-        <h3>🎭 Genre / Tag Affinity Boosting</h3>
-        <p style="font-size:.88rem;margin-bottom:8px">Phân tích lịch sử tương tác → tính điểm yêu thích cho từng thể loại → boost score của phim thuộc thể loại ưa thích.</p>
-        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:10px;font-family:monospace;font-size:.82rem;color:#93c5fd">
-          affinity[genre] += weightedScore<br/>
-          boost = 1 + strength × affinity_norm
+        <h3>🎭 Genre / Tag Affinity</h3>
+        <p style="font-size:.85rem;margin-bottom:8px">Profile thể loại dài hạn (200 interactions × time-decayed) → boost +20% cho phim khớp sở thích.</p>
+        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:10px;font-family:monospace;font-size:.8rem;color:#93c5fd">
+          affinity[g] += implicit_weight × decay<br/>
+          score *= 1 + Σaffinity[g] × 0.2
         </div>
       </div>
       <div class="card green">
-        <h3>📉 Time Decay</h3>
-        <p style="font-size:.88rem;margin-bottom:8px">Tương tác cũ có ảnh hưởng ít hơn — sở thích của user thay đổi theo thời gian.</p>
-        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:10px;font-family:monospace;font-size:.82rem;color:#6ee7b7">
-          score_decayed = score × e<sup>−λ·days</sup><br/>
-          <span style="color:rgba(255,255,255,.4)">// λ = 0.1</span>
+        <h3>📉 Time Decay + Exploration</h3>
+        <p style="font-size:.85rem;margin-bottom:6px">Tương tác cũ giảm ảnh hưởng theo thời gian. 10% slot được swap ngẫu nhiên để tránh local optima.</p>
+        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:10px;font-family:monospace;font-size:.8rem;color:#6ee7b7">
+          decay = e<sup>−0.1·days</sup> &nbsp;(min 0.05)<br/>
+          P(explore) = 10% per request
         </div>
-      </div>
-      <div class="card orange">
-        <h3>🎲 Exploration Replace</h3>
-        <p style="font-size:.88rem">5% slot trong mỗi danh sách gợi ý được thay bằng item ngẫu nhiên — giúp khám phá nội dung mới, tránh local optima cho user profile.</p>
       </div>
     </div>
   </div>
@@ -348,36 +360,34 @@
   <!-- ═══ SLIDE 7 — Interaction Signals ═══ -->
   <div class="slide">
     <h2>User Interaction Signals</h2>
-    <div style="max-width:820px;width:100%">
-      <p style="text-align:center;margin-bottom:24px;color:rgba(232,232,240,.6);font-size:.9rem">
-        Mỗi tương tác được ghi vào <strong>Redis Stream</strong> → worker xử lý async → cập nhật user embedding profile
+    <div style="max-width:880px;width:100%">
+      <p style="text-align:center;margin-bottom:20px;color:rgba(232,232,240,.55);font-size:.85rem">
+        POST /interact → <strong>Redis Stream</strong> → async worker → cập nhật user embedding · Score × <em>source_multiplier</em>
       </p>
-      <div class="cols cols-2" style="gap:16px">
+      <div class="cols cols-3" style="gap:14px">
         <div>
-          <h3 style="color:#6ee7b7;margin-bottom:12px">✅ Positive Signals</h3>
-          <div class="weight-row"><span>impression</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:20px"></div><span style="color:#93c5fd;font-weight:700">0.2</span></div></div>
-          <div class="weight-row"><span>view</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:50px"></div><span style="color:#93c5fd;font-weight:700">1.0</span></div></div>
-          <div class="weight-row"><span>click</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:80px"></div><span style="color:#93c5fd;font-weight:700">2.0</span></div></div>
-          <div class="weight-row"><span>rec_click <span class="tag blue" style="font-size:.7rem">attribution</span></span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:90px"></div><span style="color:#93c5fd;font-weight:700">2.5</span></div></div>
-          <div class="weight-row"><span>watchlist_add</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:130px"></div><span style="color:#93c5fd;font-weight:700">4.0</span></div></div>
-          <div class="weight-row"><span>rate ⭐ (1-5)</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:160px"></div><span style="color:#93c5fd;font-weight:700">score × 2</span></div></div>
-          <div class="weight-row"><span>purchase</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar" style="width:180px"></div><span style="color:#93c5fd;font-weight:700">5.0</span></div></div>
+          <h3 style="color:#6ee7b7;margin-bottom:10px;font-size:.9rem">🖥️ Engagement (positive)</h3>
+          <div class="weight-row"><span>click</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:46px"></div><span style="color:#93c5fd;font-weight:700">4.0</span></div></div>
+          <div class="weight-row"><span>watch_start</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:46px"></div><span style="color:#93c5fd;font-weight:700">4.0</span></div></div>
+          <div class="weight-row"><span>watch_progress</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:58px"></div><span style="color:#93c5fd;font-weight:700">5.0 × CR</span></div></div>
+          <div class="weight-row"><span>watch_complete</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:90px"></div><span style="color:#93c5fd;font-weight:700">10.0</span></div></div>
+          <div class="weight-row"><span>rate ⭐</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:46px"></div><span style="color:#93c5fd;font-weight:700">score × 3</span></div></div>
         </div>
         <div>
-          <h3 style="color:#fca5a5;margin-bottom:12px">❌ Negative Signals</h3>
-          <div class="weight-row"><span>watchlist_remove</span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar neg" style="width:20px"></div><span style="color:#fca5a5;font-weight:700">−0.5</span></div></div>
-          <div class="weight-row"><span>dismiss <span class="tag red" style="font-size:.7rem">"not interested"</span></span><div style="display:flex;align-items:center;gap:8px"><div class="w-bar neg" style="width:80px"></div><span style="color:#fca5a5;font-weight:700">−2.0</span></div></div>
-          <div style="margin-top:20px;padding:14px;background:rgba(255,255,255,.04);border-radius:10px;border:1px solid rgba(255,255,255,.08)">
-            <h3 style="color:#fbbf24;margin-bottom:8px">🔁 Processing Flow</h3>
-            <div class="flow" style="gap:6px;justify-content:flex-start">
-              <div class="flow-box" style="font-size:.78rem;padding:6px 10px">POST /interact</div>
-              <div class="flow-arrow" style="font-size:.9rem">→</div>
-              <div class="flow-box" style="font-size:.78rem;padding:6px 10px">Redis Stream</div>
-              <div class="flow-arrow" style="font-size:.9rem">→</div>
-              <div class="flow-box" style="font-size:.78rem;padding:6px 10px">Worker</div>
-              <div class="flow-arrow" style="font-size:.9rem">→</div>
-              <div class="flow-box" style="font-size:.78rem;padding:6px 10px">Update Profile</div>
-            </div>
+          <h3 style="color:#fbbf24;margin-bottom:10px;font-size:.9rem">🔖 Social / Intent</h3>
+          <div class="weight-row"><span>watchlist_add</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:67px"></div><span style="color:#93c5fd;font-weight:700">6.0</span></div></div>
+          <div class="weight-row"><span>share</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:67px"></div><span style="color:#93c5fd;font-weight:700">6.0</span></div></div>
+          <div class="weight-row"><span>like</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:90px"></div><span style="color:#93c5fd;font-weight:700">9.0</span></div></div>
+          <div class="weight-row"><span>search_click</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:90px"></div><span style="color:#93c5fd;font-weight:700">9.0</span></div></div>
+          <div class="weight-row"><span style="color:rgba(232,232,240,.4)">impression</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar" style="width:4px;background:#666"></div><span style="color:rgba(232,232,240,.4);font-weight:700">0.0</span></div></div>
+        </div>
+        <div>
+          <h3 style="color:#fca5a5;margin-bottom:10px;font-size:.9rem">❌ Negative</h3>
+          <div class="weight-row"><span>watchlist_remove</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar neg" style="width:20px"></div><span style="color:#fca5a5;font-weight:700">−2.0</span></div></div>
+          <div class="weight-row"><span>dislike</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar neg" style="width:40px"></div><span style="color:#fca5a5;font-weight:700">−4.0</span></div></div>
+          <div class="weight-row"><span>hide</span><div style="display:flex;align-items:center;gap:6px"><div class="w-bar neg" style="width:80px"></div><span style="color:#fca5a5;font-weight:700">−8.0</span></div></div>
+          <div style="margin-top:12px;padding:10px 12px;background:rgba(248,113,113,.06);border-radius:8px;border:1px solid rgba(248,113,113,.2);font-size:.78rem;color:rgba(232,232,240,.6)">
+            Negative signals <strong>không cập nhật</strong> embedding — chỉ vào filtering layer để loại phim tương tự khỏi rec.
           </div>
         </div>
       </div>
@@ -517,7 +527,7 @@
     <div class="cols cols-3" style="max-width:960px;gap:16px">
       <div class="card blue">
         <h3>⚡ Async End-to-End</h3>
-        <p style="font-size:.85rem">FastAPI + Motor + Redis asyncio — toàn bộ stack non-blocking. Recommendations fetch 4 loại song song với <code>asyncio.gather</code>.</p>
+        <p style="font-size:.85rem">FastAPI + Motor + Redis asyncio — toàn bộ stack non-blocking. Hybrid rec fetch 3 nguồn (content + collab + contextual) song song với <code>asyncio.gather</code>.</p>
       </div>
       <div class="card purple">
         <h3>🔒 Event Sourcing</h3>
@@ -594,7 +604,7 @@
       <div style="text-align:center">
         <div style="font-size:2rem;margin-bottom:8px">🔁</div>
         <strong style="color:#6ee7b7">Real-time learning</strong>
-        <p style="font-size:.82rem;margin-top:6px;color:rgba(232,232,240,.6)">9 loại signal, Redis Stream, async worker, profile cập nhật tức thì</p>
+        <p style="font-size:.82rem;margin-top:6px;color:rgba(232,232,240,.6)">12 loại signal, Redis Stream, async worker, profile cập nhật tức thì</p>
       </div>
       <div style="text-align:center">
         <div style="font-size:2rem;margin-bottom:8px">🏗️</div>
