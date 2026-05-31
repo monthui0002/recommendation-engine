@@ -4,7 +4,7 @@ import Loading from "./Loading";
 import Movies from "./Movies";
 import { useParams } from "react-router-dom";
 import "../styles/Movie.css";
-import { API_ENDPOINT, AppContext, BACKEND_URL, normalizeRecItem } from "../context";
+import { API_ENDPOINT, AppContext, BACKEND_URL, normalizeRecItem, toOmdbId } from "../context";
 
 const Movie = () => {
   const [movieDetails, setMovieDetails] = useState({});

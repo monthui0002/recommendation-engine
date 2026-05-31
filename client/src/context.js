@@ -21,7 +21,7 @@ const IMPRESSION_TTL_MS = 30 * 60 * 1000;
 
 // MovieLens stores imdbId as a bare number (e.g. "114709").
 // OMDB expects the "tt"-prefixed 7-digit format ("tt0114709").
-const toOmdbId = (id) => (id ? `tt${String(id).padStart(7, "0")}` : null);
+export const toOmdbId = (id) => (id ? `tt${String(id).padStart(7, "0")}` : null);
 
 export const normalizeRecItem = ({ item, score, source, sources }) => ({
   imdbID: toOmdbId(item.imdbId),
