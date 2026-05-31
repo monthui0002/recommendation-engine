@@ -60,7 +60,7 @@ async def trending_items(
         docs = []
 
     if docs:
-        return [
+        recs = [
             {
                 "item": public_item(doc["itemDoc"]),
                 "score": float(doc["interactionCount"]),
@@ -69,6 +69,19 @@ async def trending_items(
             }
             for doc in docs
         ]
+        if len(recs) >= limit:
+            return recs[:limit]
+
+        existing_ids = {rec["item"]["id"] for rec in recs}
+        popular = await top_popular_items(limit * 2)
+        for rec in popular:
+            if rec["item"]["id"] in existing_ids:
+                continue
+            recs.append(dict(rec, source="popular"))
+            existing_ids.add(rec["item"]["id"])
+            if len(recs) >= limit:
+                break
+        return recs[:limit]
 
     fallback = await top_popular_items(limit)
     return [dict(rec, source="trending") for rec in fallback]

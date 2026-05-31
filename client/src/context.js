@@ -245,7 +245,7 @@ export const AppProvider = ({ children }) => {
       setRecFailures((failures) => ({ ...failures, [key]: false }));
       try {
         const res = await axios.get(`${BACKEND_URL}/recommend/${userId}${path}`, {
-          params: { limit: 8 },
+          params: { limit: 10 },
         });
         const items = (res.data?.items ?? []).map(normalizeRecItem);
         if (key === "hybrid") setHybridRecs(items);
