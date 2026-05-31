@@ -372,10 +372,21 @@ Important: `$vectorSearch` requires MongoDB Atlas or `mongodb/mongodb-atlas-loca
 python scripts/seed.py
 ```
 
+By default this is a safe upsert. It updates MovieLens users, movies, ratings,
+embeddings, tags and user profiles without deleting existing enriched fields
+such as `items.poster`, and without deleting live user interactions created from
+the UI.
+
+Use reset only when you intentionally want a clean database:
+
+```bash
+python scripts/seed.py --reset
+```
+
 Expected output:
 
 ```text
-MovieLens seed complete
+MovieLens upsert complete
 Users: 610
 Movies: 9742
 Ratings/interactions: 100836

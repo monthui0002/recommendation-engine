@@ -12,23 +12,23 @@ from app.utils import utcnow
 
 def test_implicit_feedback_weighting() -> None:
     assert implicit_weight("impression") == 0
-    assert implicit_weight("click") == 2
-    assert implicit_weight("watchlist_add") == 4
-    assert implicit_weight("watch_start") == 3
-    assert implicit_weight("watch_complete") == 6
-    assert implicit_weight("like") == 5
+    assert implicit_weight("click") == 4
+    assert implicit_weight("watchlist_add") == 6
+    assert implicit_weight("watch_start") == 4
+    assert implicit_weight("watch_complete") == 10
+    assert implicit_weight("like") == 9
     assert implicit_weight("dislike") == -4
     assert implicit_weight("hide") == -8
-    assert implicit_weight("search_click") == 2.5
-    assert implicit_weight("share") == 4
-    assert implicit_weight("rate", 4) == 8
+    assert implicit_weight("search_click") == 9
+    assert implicit_weight("share") == 6
+    assert implicit_weight("rate", 4) == 12
 
 
 def test_positive_profile_update_requires_real_positive_signal() -> None:
     assert not should_update_positive_profile("impression", 0)
-    assert not should_update_positive_profile("rate", 6)
-    assert should_update_positive_profile("rate", 7)
-    assert should_update_positive_profile("watch_complete", 6)
+    assert not should_update_positive_profile("rate", 10)
+    assert should_update_positive_profile("rate", 12)
+    assert should_update_positive_profile("watch_complete", 10)
 
 
 def test_time_decay_reduces_old_scores() -> None:

@@ -80,6 +80,7 @@ const Movies = ({ movie, recType, onDismiss, dismissType = "dismiss" }) => {
       movieId,
       type,
       source: eventSource,
+      refreshRecommendations: true,
     });
     if (type === "hide") setHidden(true);
   };

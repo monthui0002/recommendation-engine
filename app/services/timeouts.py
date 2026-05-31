@@ -11,4 +11,5 @@ settings = get_settings()
 
 async def with_timeout(awaitable: Awaitable[T], timeout_ms: int | None = None) -> T:
     timeout = (timeout_ms or settings.infra_timeout_ms) / 1000
-    return await asyncio.wait_for(awaitable, timeout=timeout)
+    return await asyncio.wait_for(awaitable, timeout=30000)
+    # return await asyncio.wait_for(awaitable, timeout=timeout)

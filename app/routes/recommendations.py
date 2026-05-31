@@ -26,7 +26,7 @@ async def recommend(
     await validate_user_id(user_id)
 
     ttl = 3600 if cache_type == "offline" else 60
-    cache_variant = f"v6:{cache_type}:limit={limit}:context={context or 'none'}"
+    cache_variant = f"v9:{cache_type}:limit={limit}:context={context or 'none'}"
     key = f"rec:{user_id}:{cache_variant}"
     items = await with_cache(
         key,

@@ -11,7 +11,11 @@ from app.core.config import get_settings
 from app.core.database import close_connections, create_indexes, check_connections, db, redis_client
 from app.services.cache import invalidate_user_cache
 from app.services.ids import resolve_item_id, resolve_user_id
-from app.services.recommendations import implicit_weight, should_update_positive_profile
+from app.services.recommendations import (
+    implicit_weight,
+    interaction_source_multiplier,
+    should_update_positive_profile,
+)
 from app.utils import utcnow
 
 
@@ -99,6 +103,7 @@ async def process_interaction_event(fields: dict[str, str]) -> ObjectId:
     weighted_score = implicit_weight(interaction_type, score)
     if interaction_type == "watch_progress" and completion_rate is not None:
         weighted_score *= max(0.0, min(completion_rate, 1.0))
+    weighted_score *= interaction_source_multiplier(fields.get("source") or None, interaction_type)
 
     doc = {
         "userId": user_id,

@@ -114,6 +114,7 @@ export const AppProvider = ({ children }) => {
       score = null,
       completionRate = null,
       source = null,
+      refreshRecommendations = false,
       ...extra
     }) => {
       if (!userId || !movieId || !type) return;
@@ -132,9 +133,8 @@ export const AppProvider = ({ children }) => {
           source,
           ...extra,
         });
-        if (type !== "impression") {
-          window.setTimeout(() => setRecsRefreshKey((key) => key + 1), 900);
-          window.setTimeout(() => setRecsRefreshKey((key) => key + 1), 2500);
+        if (type !== "impression" && refreshRecommendations) {
+          window.setTimeout(() => setRecsRefreshKey((key) => key + 1), 1200);
         }
         return response.data;
       } catch (err) {

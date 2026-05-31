@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import Loading from "./Loading";
 import Movies from "./Movies";
@@ -98,11 +98,11 @@ const Movie = () => {
     });
   }, [currentMovie, id, trackInteraction]);
 
-  useEffect(() => {
+  const loadContextRecommendations = useCallback(() => {
     if (!currentMovie?.movieId || !userId) return;
     setContextLoading(true);
     axios
-      .get(`${BACKEND_URL}/recommend/${userId}`, {
+      .get(`${BACKEND_URL}/recommend/${userId}/content`, {
         params: { limit: 10, context: currentMovie.movieId },
       })
       .then((response) => {
@@ -110,7 +110,11 @@ const Movie = () => {
       })
       .catch(() => setContextRecs([]))
       .finally(() => setContextLoading(false));
-  }, [currentMovie, userId]);
+  }, [currentMovie?.movieId, userId]);
+
+  useEffect(() => {
+    loadContextRecommendations();
+  }, [loadContextRecommendations]);
 
   const loadInteractionSummary = async () => {
     if (!currentMovie?.movieId || !userId) return;
@@ -176,6 +180,7 @@ const Movie = () => {
       return;
     }
     window.setTimeout(loadInteractionSummary, 1200);
+    window.setTimeout(loadContextRecommendations, 1400);
     setActionStatus(
       type === "watch_progress"
         ? `Progress queued: ${Math.round((extra.completionRate || 0) * 100)}%`
