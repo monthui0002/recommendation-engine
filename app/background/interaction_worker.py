@@ -1,4 +1,5 @@
 import asyncio
+import json
 import signal
 from contextlib import suppress
 from typing import Any
@@ -10,8 +11,8 @@ from app.core.config import get_settings
 from app.core.database import close_connections, create_indexes, db, redis_client
 from app.services.cache import invalidate_user_cache
 from app.services.ids import resolve_item_id, resolve_user_id
-from app.services.recommendations import implicit_weight
-from app.utils import ensure_object_id, utcnow
+from app.services.recommendations import implicit_weight, should_update_positive_profile
+from app.utils import utcnow
 
 
 settings = get_settings()
@@ -29,6 +30,26 @@ async def enqueue_interaction_event(payload: dict[str, Any]) -> str:
         "itemId": str(payload["itemId"]),
         "type": str(getattr(interaction_type, "value", interaction_type)),
         "score": "" if payload.get("score") is None else str(payload["score"]),
+        "completionRate": ""
+        if payload.get("completionRate") is None
+        else str(payload["completionRate"]),
+        "source": "" if payload.get("source") is None else str(payload["source"]),
+        "positionSeconds": ""
+        if payload.get("positionSeconds") is None
+        else str(payload["positionSeconds"]),
+        "durationSeconds": ""
+        if payload.get("durationSeconds") is None
+        else str(payload["durationSeconds"]),
+        "clientEventId": ""
+        if payload.get("clientEventId") is None
+        else str(payload["clientEventId"]),
+        "recommendationId": ""
+        if payload.get("recommendationId") is None
+        else str(payload["recommendationId"]),
+        "contextItemId": ""
+        if payload.get("contextItemId") is None
+        else str(payload["contextItemId"]),
+        "metadata": json.dumps(payload.get("metadata") or {}),
         "createdAt": utcnow().isoformat(),
     }
     return await redis_client.xadd(settings.interaction_stream, event)
@@ -51,25 +72,60 @@ async def process_interaction_event(fields: dict[str, str]) -> ObjectId:
     user_id = await resolve_user_id(fields["userId"])
     item_id = await resolve_item_id(fields["itemId"])
     score = float(fields["score"]) if fields.get("score") else None
+    completion_rate = (
+        float(fields["completionRate"]) if fields.get("completionRate") else None
+    )
+    position_seconds = (
+        float(fields["positionSeconds"]) if fields.get("positionSeconds") else None
+    )
+    duration_seconds = (
+        float(fields["durationSeconds"]) if fields.get("durationSeconds") else None
+    )
+    try:
+        metadata = json.loads(fields.get("metadata") or "{}")
+    except json.JSONDecodeError:
+        metadata = {}
     interaction_type = fields["type"]
+    if completion_rate is None and position_seconds is not None and duration_seconds:
+        completion_rate = min(max(position_seconds / duration_seconds, 0), 1)
 
-    user = await db.users.find_one({"_id": user_id}, {"_id": 1})
+    user = await db.users.find_one({"_id": user_id}, {"_id": 1, "movielensUserId": 1})
     item = await db.items.find_one({"_id": item_id})
     if not user or not item:
         raise ValueError("User or item not found")
 
     timestamp = utcnow()
+    weighted_score = implicit_weight(interaction_type, score)
+    if interaction_type == "watch_progress" and completion_rate is not None:
+        weighted_score *= max(0.0, min(completion_rate, 1.0))
+
     doc = {
         "userId": user_id,
         "itemId": item_id,
         "type": interaction_type,
         "score": score,
-        "weightedScore": implicit_weight(interaction_type, score),
+        "completionRate": completion_rate,
+        "positionSeconds": position_seconds,
+        "durationSeconds": duration_seconds,
+        "source": fields.get("source") or None,
+        "clientEventId": fields.get("clientEventId") or None,
+        "recommendationId": fields.get("recommendationId") or None,
+        "contextItemId": fields.get("contextItemId") or None,
+        "metadata": metadata,
+        "movielensUserId": user.get("movielensUserId"),
+        "movieId": item.get("movieId"),
+        "weightedScore": weighted_score,
         "timestamp": timestamp,
     }
     result = await db.interactions.insert_one(doc)
-    await update_user_profile(user_id, item, doc["weightedScore"])
-    await invalidate_user_cache(str(user_id))
+    if should_update_positive_profile(interaction_type, weighted_score):
+        await update_user_profile(user_id, item, weighted_score)
+    if interaction_type != "impression":
+        await invalidate_user_cache(
+            fields.get("userId"),
+            str(user_id),
+            user.get("movielensUserId"),
+        )
     return result.inserted_id
 
 

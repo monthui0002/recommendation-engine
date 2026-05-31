@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class PyObjectId(ObjectId):
@@ -27,10 +27,19 @@ class ItemType(str, Enum):
 
 
 class InteractionType(str, Enum):
-    view = "view"
+    impression = "impression"
     click = "click"
-    purchase = "purchase"
+    watchlist_add = "watchlist_add"
+    watch_start = "watch_start"
+    watch_progress = "watch_progress"
+    watch_complete = "watch_complete"
     rate = "rate"
+    watchlist_remove = "watchlist_remove"
+    like = "like"
+    dislike = "dislike"
+    hide = "hide"
+    search_click = "search_click"
+    share = "share"
 
 
 class MongoModel(BaseModel):
@@ -65,6 +74,7 @@ class ItemCreate(MongoModel):
     available: bool = True
     imdbId: Optional[str] = None
     tmdbId: Optional[int] = None
+    poster: Optional[str] = None
 
     @field_validator("embedding")
     @classmethod
@@ -84,6 +94,72 @@ class InteractionCreate(MongoModel):
     itemId: str | int | PyObjectId
     type: InteractionType
     score: Optional[float] = None
+    completionRate: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        validation_alias=AliasChoices("completionRate", "completion_rate"),
+    )
+    source: Optional[str] = None
+    positionSeconds: Optional[float] = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices("positionSeconds", "position_seconds"),
+    )
+    durationSeconds: Optional[float] = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices("durationSeconds", "duration_seconds"),
+    )
+    clientEventId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("clientEventId", "client_event_id"),
+    )
+    recommendationId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("recommendationId", "recommendation_id"),
+    )
+    contextItemId: Optional[str | int | PyObjectId] = Field(
+        default=None,
+        validation_alias=AliasChoices("contextItemId", "context_item_id"),
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class InteractionEventCreate(MongoModel):
+    userId: str | int | PyObjectId
+    itemId: str | int | PyObjectId
+    score: Optional[float] = None
+    completionRate: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        validation_alias=AliasChoices("completionRate", "completion_rate"),
+    )
+    source: Optional[str] = None
+    positionSeconds: Optional[float] = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices("positionSeconds", "position_seconds"),
+    )
+    durationSeconds: Optional[float] = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices("durationSeconds", "duration_seconds"),
+    )
+    clientEventId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("clientEventId", "client_event_id"),
+    )
+    recommendationId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("recommendationId", "recommendation_id"),
+    )
+    contextItemId: Optional[str | int | PyObjectId] = Field(
+        default=None,
+        validation_alias=AliasChoices("contextItemId", "context_item_id"),
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class InteractionInDB(InteractionCreate):

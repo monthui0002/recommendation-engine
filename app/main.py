@@ -30,7 +30,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -41,11 +41,14 @@ app.include_router(metrics_router)
 app.include_router(search_router)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", include_in_schema=False)
 async def ui() -> FileResponse:
+    if not (STATIC_DIR / "index.html").exists():
+        return FileResponse(Path("client/index.html"))
     return FileResponse(STATIC_DIR / "index.html")
 
 

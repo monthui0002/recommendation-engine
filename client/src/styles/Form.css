@@ -1,34 +1,60 @@
-form {
+.SearchForm {
   display: flex;
+  min-width: min(420px, 42vw);
 }
 
-form input {
-  flex: 5;
-  border: none;
-  padding: 4px 10px;
-  border-top-left-radius: 3px;
-  border-bottom-left-radius: 3px;
+.SearchForm input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
   outline: none;
 }
 
-form input::selection {
-  color: rgba(255, 255, 255, 0.8);
-  background-color: #212121;
+.SearchForm input::placeholder {
+  color: var(--soft);
 }
 
-form button {
-  flex: 1;
-  background-color: #3434bb;
-  border: none;
-  border-top-right-radius: 3px;
-  border-bottom-right-radius: 3px;
+.SearchForm input:focus {
+  border-color: var(--blue);
+}
+
+.SearchForm button {
   display: grid;
   place-items: center;
-  padding: 3px 7px;
-  outline: none;
+  width: 46px;
+  border: 1px solid var(--blue);
+  border-radius: 0 8px 8px 0;
+  background: var(--blue);
+  color: #fff;
   cursor: pointer;
 }
 
-form button svg {
+.SearchForm button svg {
   color: #fff;
+}
+
+.SearchForm--large {
+  width: min(760px, 100%);
+}
+
+.SearchForm--large input {
+  min-height: 54px;
+  border-radius: 8px 0 0 8px;
+  font-size: 16px;
+}
+
+.SearchForm--large button {
+  width: 58px;
+}
+
+@media (max-width: 760px) {
+  .SearchForm {
+    min-width: 0;
+    width: 100%;
+  }
 }

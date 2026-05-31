@@ -1,100 +1,103 @@
 # MovieLens Recommendation Engine
 
-Recommendation Engine cho phim, xây bằng **FastAPI + MongoDB + Redis**, sử dụng dữ liệu **MovieLens `ml-latest-small`** đã unzip trong thư mục `data/`.
+Một hệ thống recommendation cho phim, xây bằng **FastAPI + MongoDB + Redis + React**, dùng dataset **MovieLens `ml-latest-small`** của GroupLens.
 
-Project này mô phỏng một hệ thống recommendation tương đối đầy đủ:
+Project này được thiết kế để trình bày như một hệ thống recommendation end-to-end:
 
-- Content-Based Filtering bằng MongoDB Atlas Vector Search.
-- Collaborative Filtering bằng MongoDB Aggregation Pipeline.
-- Hybrid ranking kết hợp content + collaborative.
-- Feature Store nhẹ bằng collection `user_profiles`.
-- Redis cache cho API recommendation.
-- Redis Stream queue cho real-time interaction events.
-- Worker nền để ghi interaction, cập nhật profile và invalidate cache.
-- Fallback/circuit breaker để API vẫn trả kết quả khi vector search/cache chậm.
+- Search movie catalog với trang search riêng.
+- Recommendation rails: Hybrid, Content-Based, Collaborative, Trending.
+- Movie detail có feedback actions: rate, watch progress, complete, share.
+- Real-time interaction pipeline qua Redis Stream + background worker.
+- Feature Store nhẹ bằng `user_profiles`.
+- Cache Redis cho recommendation và popular movies.
+- MongoDB Atlas Vector Search hoặc Atlas Local cho vector retrieval.
+
+## Demo Highlights
+
+Khi trình bày, có thể đi theo flow này:
+
+1. Mở dashboard: xem các rail recommendation cho `MovieLens user 1`.
+2. Chuyển user id: recommendation thay đổi theo lịch sử user.
+3. Vào `/search`: chưa nhập gì sẽ thấy popular movies được cache.
+4. Search một phim: kết quả hiện ngay từ backend, poster enrich sau.
+5. Bấm vào một phim: detail page hiện interaction summary của user.
+6. Rate 5 sao, Start/Complete watch, Share.
+7. Quay lại dashboard: rails tự refresh, cache bị invalidate.
+8. Giải thích vì sao `impression` không làm tăng điểm, chỉ dùng cho CTR/exposure.
 
 ## Architecture
 
 ```text
-                    ┌────────────────────────────┐
-                    │        Client / curl        │
-                    └──────────────┬─────────────┘
-                                   │
-                                   ▼
-                         ┌─────────────────┐
-                         │     FastAPI     │
-                         │   app/main.py   │
-                         └───────┬─────────┘
-                                 │
-        ┌────────────────────────┼────────────────────────┐
-        │                        │                        │
-        ▼                        ▼                        ▼
-┌───────────────┐        ┌───────────────┐        ┌────────────────┐
-│ /recommend/*  │        │   /interact   │        │   /metrics/*   │
-│ routes        │        │   routes      │        │   routes       │
-└───────┬───────┘        └───────┬───────┘        └───────┬────────┘
-        │                        │                        │
-        ▼                        ▼                        ▼
-┌───────────────┐        ┌───────────────┐        ┌────────────────┐
-│ Redis Cache   │        │ Redis Stream  │        │ Metrics        │
-│ rec:{user}:*  │        │ interaction   │        │ mock + diversity│
-└───────┬───────┘        └───────┬───────┘        └────────────────┘
-        │                        │
-        ▼                        ▼
-┌────────────────────────────────────────┐
-│        Recommendation Services          │
-│ content, collaborative, hybrid, filter  │
-└────────────────┬───────────────────────┘
-                 │
-                 ▼
-┌────────────────────────────────────────┐
-│ MongoDB / Atlas Local                   │
-│ users, items, interactions, profiles    │
-│ $vectorSearch + aggregation pipeline    │
-└────────────────────────────────────────┘
+React Client
+  |-- Dashboard rails
+  |-- Search page
+  |-- Movie detail + feedback controls
+          |
+          v
+FastAPI
+  |-- /search/*          -> search + popular cache
+  |-- /recommend/*       -> content/collab/hybrid/trending
+  |-- /interact/*        -> enqueue interaction events
+  |-- /interactions/*    -> per-movie user interaction summary
+  |-- /metrics/*         -> mock Precision@K + diversity
+          |
+          +------------------ Redis
+          |                    |-- rec cache
+          |                    |-- popular cache
+          |                    |-- interaction_events stream
+          |
+          +------------------ MongoDB Atlas / Atlas Local
+                               |-- users
+                               |-- items
+                               |-- interactions
+                               |-- user_profiles
+                               |-- explorations
 
-Redis Stream Worker:
-
-POST /interact -> xadd Redis Stream -> worker consumes -> MongoDB insert
-                                            -> update user_profiles
-                                            -> invalidate Redis cache
+Background worker
+  Redis Stream -> insert interaction -> update user profile -> invalidate cache
 ```
 
 ## Tech Stack
 
-- Runtime: Python 3 + FastAPI
-- Database: MongoDB async qua `motor`
-- Vector Search: MongoDB Atlas `$vectorSearch` trên `items.embedding`
-- Cache: Redis async qua `redis.asyncio`
-- Queue: Redis Stream
-- Data source: GroupLens MovieLens `ml-latest-small`
-- Tests: `pytest`
+| Layer | Tech |
+| --- | --- |
+| API | Python 3, FastAPI |
+| Database | MongoDB async via Motor |
+| Vector Search | MongoDB Atlas `$vectorSearch` |
+| Cache | Redis async |
+| Queue | Redis Stream |
+| Frontend | React 17 + Vite |
+| Dataset | MovieLens `ml-latest-small` |
+| Tests | pytest |
 
-## Project Structure
+## Folder Structure
 
 ```text
 app/
   core/
-    config.py                  # Pydantic Settings, đọc .env
-    database.py                # Motor client, Redis client, Mongo indexes
+    config.py                 # Pydantic settings
+    database.py               # Mongo + Redis clients, indexes
   background/
-    interaction_worker.py      # Consumer Redis Stream, ghi MongoDB, update profile
+    interaction_worker.py     # Redis Stream consumer
   models/
-    schemas.py                 # Pydantic schemas
+    schemas.py                # Pydantic schemas
   routes/
-    recommendations.py         # /recommend endpoints
-    interactions.py            # /interact endpoint
-    metrics.py                 # /metrics endpoint
+    recommendations.py        # /recommend endpoints
+    interactions.py           # /interact + interaction summary
+    search.py                 # /search endpoints
+    metrics.py                # /metrics endpoint
   services/
-    cache.py                   # Redis cache wrapper
-    embeddings.py              # Mock embedding 1536 chiều
-    ids.py                     # Resolve MovieLens numeric id -> Mongo ObjectId
-    metrics.py                 # Precision@K mock + diversity
-    recommendations.py         # Main recommendation logic
-    timeouts.py                # Timeout wrapper
-  utils.py
+    recommendations.py        # core ranking logic
+    search.py                 # hybrid search
+    cache.py                  # Redis helpers
+    embeddings.py             # deterministic mock embeddings
+    ids.py                    # MovieLens id <-> Mongo ObjectId
 scripts/
-  seed.py                      # Import MovieLens CSV vào MongoDB
+  seed.py                     # import MovieLens CSV
+client/
+  src/
+    components/               # dashboard, search, movie detail
+    styles/                   # production-ish dark UI
 data/
   movies.csv
   ratings.csv
@@ -107,46 +110,38 @@ tests/
 
 ### `users`
 
-MovieLens không có thông tin nhân khẩu học thật, nên user được tạo từ `ratings.csv` và `tags.csv`.
-
 ```json
 {
   "_id": "ObjectId",
   "movielensUserId": 1,
   "name": "MovieLens User 1",
-  "age": 0,
-  "preferences": ["Comedy", "Adventure"],
+  "preferences": ["Drama", "Comedy"],
   "createdAt": "datetime"
 }
 ```
 
 ### `items`
 
-Mỗi movie trong `movies.csv` trở thành một item.
-
 ```json
 {
   "_id": "ObjectId",
-  "movieId": 1,
-  "title": "Toy Story (1995)",
+  "movieId": 356,
+  "title": "Forrest Gump (1994)",
   "type": "movie",
-  "genres": ["Adventure", "Animation", "Children", "Comedy", "Fantasy"],
-  "tags": ["Adventure", "Animation", "funny"],
-  "description": "Toy Story (1995) genres: ...",
-  "embedding": [0.12, -0.04],
-  "popularity": 18.42,
-  "avgRating": 3.92,
-  "ratingCount": 215,
+  "genres": ["Comedy", "Drama", "Romance", "War"],
+  "tags": ["Comedy", "Drama", "heartwarming"],
+  "description": "Forrest Gump (1994) genres: ...",
+  "embedding": [1536 numbers],
+  "popularity": 24.1482,
+  "avgRating": 4.1641,
+  "ratingCount": 329,
   "available": true,
-  "imdbId": "0114709",
-  "tmdbId": 862,
-  "createdAt": "datetime"
+  "imdbId": "0109830",
+  "tmdbId": 13
 }
 ```
 
 ### `interactions`
-
-MovieLens ratings được map thành interaction `type="rate"`.
 
 ```json
 {
@@ -154,66 +149,34 @@ MovieLens ratings được map thành interaction `type="rate"`.
   "userId": "ObjectId",
   "itemId": "ObjectId",
   "movielensUserId": 1,
-  "movieId": 1,
+  "movieId": 356,
   "type": "rate",
-  "score": 4.0,
-  "weightedScore": 8.0,
+  "score": 5,
+  "completionRate": 1,
+  "weightedScore": 10,
+  "source": "detail_page",
   "timestamp": "datetime"
 }
 ```
 
 ### `user_profiles`
 
-Feature Store nhẹ. Mỗi user có một vector đại diện cho sở thích dài hạn.
+Feature Store nhẹ. Worker cập nhật vector này khi có positive signal.
 
 ```json
 {
   "_id": "ObjectId",
   "userId": "ObjectId",
   "movielensUserId": 1,
-  "embedding": [0.03, 0.91],
-  "interactionWeight": 320.0,
+  "embedding": [1536 numbers],
+  "interactionWeight": 1963,
   "updatedAt": "datetime"
 }
 ```
 
-## Indexes
+## Recommendation Logic
 
-App tạo một số index khi startup:
-
-- `users.movielensUserId`
-- `items.movieId`
-- `items.popularity`
-- `items.available + items.popularity`
-- `items.tags`
-- `items.genres`
-- `interactions.userId + interactions.itemId + interactions.timestamp`
-- `user_profiles.userId`
-
-Vector Search index cần có trên `items.embedding`:
-
-```json
-{
-  "name": "items_embedding_vector_index",
-  "type": "vectorSearch",
-  "definition": {
-    "fields": [
-      {
-        "type": "vector",
-        "path": "embedding",
-        "numDimensions": 1536,
-        "similarity": "cosine"
-      }
-    ]
-  }
-}
-```
-
-> Quan trọng: `$vectorSearch` cần MongoDB Atlas hoặc Docker image `mongodb/mongodb-atlas-local`. MongoDB Community truyền thống không chạy được `$vectorSearch`.
-
-## Recommendation Flow
-
-### 1. Content-Based Filtering
+### 1. Content-Based
 
 Endpoint:
 
@@ -224,15 +187,16 @@ GET /recommend/{userId}/content
 Flow:
 
 ```text
-userId
-  -> resolve MovieLens userId hoặc Mongo ObjectId
-  -> đọc user_profiles.embedding
-  -> $vectorSearch trên items.embedding
-  -> loại item user đã xem/rate
-  -> context boost nếu có ?context=movieId
+resolve user
+  -> read long-term user_profiles.embedding
+  -> blend with recent positive interactions
+  -> MongoDB $vectorSearch
+  -> local vector fallback if Atlas vector search unavailable
+  -> genre/tag affinity boost
+  -> context boost if ?context=movieId
 ```
 
-Nếu user chưa đủ interaction hoặc không có profile, service fallback về top popular movies.
+Nếu user quá ít interaction hoặc vector search chậm, hệ thống fallback về popular movies.
 
 ### 2. Collaborative Filtering
 
@@ -245,25 +209,16 @@ GET /recommend/{userId}/collab
 Flow:
 
 ```text
-user ratings
-  -> lookup users khác cùng rate movie
-  -> group overlap để tính similar users
-  -> lấy phim mà similar users thích
-  -> tính weighted score + time decay
+positive items of current user
+  -> find users with overlap
+  -> group similar users
+  -> collect positive items from similar users
+  -> weighted score + time decay
 ```
 
-Rating được quy đổi theo implicit feedback:
+Rating MovieLens chỉ được xem là positive khi `score >= 3.5`.
 
-```text
-view     = 1
-click    = 2
-purchase = 5
-rate     = rating * 2
-```
-
-Với MovieLens, dữ liệu chính là `rate`.
-
-### 3. Hybrid Recommendation
+### 3. Hybrid
 
 Endpoint:
 
@@ -274,146 +229,117 @@ GET /recommend/{userId}
 Flow:
 
 ```text
-content recommendations      collaborative recommendations
-          │                              │
-          └──────────────┬───────────────┘
-                         ▼
-                  weighted merge
-                         ▼
-               multi-objective reranking
-                         ▼
-                 filtering layer
-                         ▼
-              epsilon-greedy exploration
-                         ▼
-                    API response
+content candidates       collaborative candidates
+        |                         |
+        +-----------+-------------+
+                    v
+           normalize per-source scores
+                    v
+           weighted merge
+                    v
+           multi-objective rerank
+                    v
+           filtering + diversity + exploration
+                    v
+              API response
 ```
 
-Default weights:
+Default:
 
 ```text
-content       = 40%
+content = 40%
 collaborative = 60%
 ```
 
-Nếu collaborative trả ít hơn 5 kết quả, content tăng lên 80%.
+Nếu collaborative quá ít candidate, content tăng lên `80%`.
 
-### 4. Session Intent
-
-Nếu user tương tác ít nhất 3 phim có cùng tag/genre trong 5 phút gần nhất:
-
-- content weight được tăng.
-- item có tag/genre trùng session intent được boost trong reranking.
-
-### 5. Multi-Objective Ranking
-
-Final score được rerank theo công thức gần đúng:
-
-```text
-finalScore =
-  hybridScore
-  * (1 + businessMargin)
-  * (1 + freshnessBoost)
-  * sessionIntentBoost
-```
-
-Với MovieLens, `businessMargin` mặc định bằng `0`, vì đây là dataset nghiên cứu không có dữ liệu thương mại.
-
-### 6. Filtering Layer
-
-Trước khi trả API:
-
-- loại movie `available=false`.
-- loại movie user đã tương tác trong 7 ngày gần nhất.
-
-### 7. Exploration
-
-10% request sẽ thay 1 slot bằng một movie ngẫu nhiên ngoài nhóm top popularity. Mục đích là giảm feedback loop và tăng khám phá.
-
-Log được lưu vào collection `explorations`.
-
-## Real-Time Interaction Flow
+### 4. Trending
 
 Endpoint:
 
 ```text
-POST /interact
+GET /recommend/{userId}/trending
 ```
 
-API không ghi MongoDB trực tiếp. Thay vào đó:
+Trending dựa trên interaction velocity gần đây, bỏ qua `impression` vì impression chỉ là exposure.
+
+## Interaction Signals
+
+| Event | Meaning | Weight |
+| --- | --- | --- |
+| `impression` | Movie được hiển thị cho user | `0` |
+| `click` | User click recommendation card | `2` |
+| `search_click` | User click từ search results | `2.5` |
+| `watch_start` | Bắt đầu xem | `3` |
+| `watch_progress` | Tiến độ xem | `3.5 * completionRate` |
+| `watch_complete` | Xem gần hết/hết phim | `6` |
+| `rate` | Rating sao | `score * 2` |
+| `watchlist_add` | Thêm vào watchlist | `4` |
+| `watchlist_remove` | Gỡ khỏi watchlist | `-2` |
+| `like` | Muốn thấy phim tương tự | `5` |
+| `dislike` | Giảm phim tương tự | `-4` |
+| `hide` | Ẩn phim này | `-8` |
+| `share` | Chia sẻ phim | `4` |
+
+`impression` rất quan trọng cho production vì là mẫu số của CTR và giúp tạo negative sample kiểu “seen but ignored”. Tuy nhiên nó không được dùng như positive preference.
+
+## Frontend Features
+
+### Dashboard
+
+- `For You`: hybrid recommendation.
+- `Similar To Your Taste`: content profile.
+- `Users Also Liked`: collaborative filtering.
+- `Trending Now`: recent engagement.
+- Metrics cards: Precision@K mock, diversity, item counts.
+
+### Search Page
+
+Route:
 
 ```text
-POST /interact
-  -> validate payload
-  -> xadd Redis Stream
-  -> return {"status": "queued"}
+/search
 ```
 
-Worker:
+- Khi chưa search: hiển thị popular movies.
+- Popular được cache Redis trong vài phút.
+- Khi search: backend result render trước, poster từ OMDB enrich sau.
+- Movie không có poster sẽ có placeholder MovieLens.
 
-```text
-Redis Stream event
-  -> resolve userId/movieId
-  -> insert interactions
-  -> update user_profiles embedding
-  -> invalidate Redis cache rec:{userId}:*
-```
+### Movie Detail
 
-Lý do tách worker:
-
-- giảm latency cho API write.
-- tránh write bottleneck khi traffic interaction lớn.
-- gom logic update profile/cache vào background pipeline.
+- Hiển thị rating/progress/share summary của user cho phim hiện tại.
+- Có controls:
+  - Start
+  - Log Progress
+  - Complete
+  - Star rating
+  - Remove Watchlist
+  - Share
+- Có context recommendation: `GET /recommend/{userId}?context={movieId}`.
 
 ## Cache Strategy
 
-Hybrid recommendation có cache Redis.
+| Cache | Key pattern | TTL |
+| --- | --- | --- |
+| Hybrid session rec | `rec:{userId}:v6:session:*` | 60s |
+| Hybrid offline rec | `rec:{userId}:v6:offline:*` | 3600s |
+| Popular search | `search:popular:v1:*` | 300s |
 
-Key format:
-
-```text
-rec:{userId}:{cacheType}:limit={limit}:context={context}
-```
-
-TTL:
+Khi có non-impression interaction:
 
 ```text
-session = 60s
-offline = 3600s
+POST /interact/*
+  -> enqueue Redis Stream
+  -> invalidate rec:{userId}:*
+  -> FE refresh recommendation rails
 ```
 
-Khi có interaction mới, worker invalidate:
+Worker cũng invalidate cache sau khi ghi MongoDB.
 
-```text
-rec:{userId}:*
-```
+## Running Locally
 
-Nếu Redis chậm hoặc lỗi, API bỏ qua cache và compute trực tiếp.
-
-## Timeout / Circuit Breaker
-
-Các thao tác hạ tầng quan trọng được bọc timeout mặc định `200ms`:
-
-- Redis get/set/scan/delete
-- MongoDB vector search
-- MongoDB aggregation/query chính
-
-Nếu timeout:
-
-- content-based fallback local vector search hoặc popular movies.
-- collaborative trả rỗng để hybrid tự giảm weight.
-- cache bị bỏ qua.
-- API ưu tiên có response hơn là chờ quá lâu.
-
-Config trong `.env`:
-
-```env
-INFRA_TIMEOUT_MS=200
-```
-
-## Setup
-
-### 1. Cài dependencies
+### 1. Install Python dependencies
 
 ```bash
 python3 -m venv .venv
@@ -422,21 +348,31 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-### 2. Chạy MongoDB Atlas Local và Redis
+For local Docker, `.env` can use:
+
+```env
+MONGODB_URI=mongodb://localhost:27017/?directConnection=true
+MONGODB_DB=recommendation
+REDIS_URL=redis://localhost:6379/0
+VECTOR_INDEX_NAME=items_embedding_vector_index
+INFRA_TIMEOUT_MS=200
+```
+
+### 2. Start MongoDB Atlas Local and Redis
 
 ```bash
 docker compose up -d
 ```
 
-### 3. Import MovieLens data
+Important: `$vectorSearch` requires MongoDB Atlas or `mongodb/mongodb-atlas-local`. MongoDB Community does not support `$vectorSearch`.
+
+### 3. Seed MovieLens data
 
 ```bash
 python scripts/seed.py
 ```
 
-Script sẽ xóa các collection hiện tại rồi import lại dữ liệu từ `data/`.
-
-Output mẫu:
+Expected output:
 
 ```text
 MovieLens seed complete
@@ -451,123 +387,161 @@ Example MovieLens movieId: 1
 ### 4. Start API
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --port=8080 --reload
 ```
 
-UI dashboard sẽ có tại:
+API:
 
 ```text
-http://localhost:8000/
+http://localhost:8080
 ```
 
 ### 5. Start worker
 
-Mở terminal khác:
+Open another terminal:
 
 ```bash
 python -m app.background.interaction_worker
 ```
 
-## API Examples
+Worker is required for queued interactions to be written to MongoDB.
 
-Các endpoint nhận được cả Mongo ObjectId và MovieLens numeric id. Ví dụ dưới đây dùng MovieLens id.
-
-### Health
+### 6. Start frontend
 
 ```bash
-curl http://localhost:8000/health
+cd client
+npm install
+npm run start
 ```
 
-### Hybrid recommendation
+Frontend:
 
-```bash
-curl "http://localhost:8000/recommend/1?limit=10"
+```text
+http://localhost:3000
 ```
 
-### Content-based only
+## API Quick Test
+
+Health:
 
 ```bash
-curl "http://localhost:8000/recommend/1/content?limit=10"
+curl http://localhost:8080/health
 ```
 
-### Collaborative only
+Popular movies:
 
 ```bash
-curl "http://localhost:8000/recommend/1/collab?limit=10"
+curl "http://localhost:8080/search/movies/popular?limit=5"
 ```
 
-### Session context boost
-
-Boost các movie giống movie context `movieId=1`.
+Search:
 
 ```bash
-curl "http://localhost:8000/recommend/1?limit=10&context=1"
+curl "http://localhost:8080/search/movies?q=matrix&limit=5"
 ```
 
-### Offline cache TTL
+Hybrid recommendation:
 
 ```bash
-curl "http://localhost:8000/recommend/1?limit=10&cache_type=offline"
+curl "http://localhost:8080/recommend/1?limit=8"
 ```
 
-### Record interaction
+Content recommendation:
 
 ```bash
-curl -X POST http://localhost:8000/interact \
+curl "http://localhost:8080/recommend/1/content?limit=8"
+```
+
+Collaborative recommendation:
+
+```bash
+curl "http://localhost:8080/recommend/1/collab?limit=8"
+```
+
+Context recommendation:
+
+```bash
+curl "http://localhost:8080/recommend/1?limit=8&context=356"
+```
+
+Interaction summary:
+
+```bash
+curl "http://localhost:8080/interactions/1/items/356/summary"
+```
+
+Rate movie:
+
+```bash
+curl -X POST http://localhost:8080/interact/rate \
   -H "Content-Type: application/json" \
-  -d '{"userId":1,"itemId":1,"type":"rate","score":4.5}'
+  -d '{"userId":1,"itemId":356,"score":5,"source":"demo"}'
 ```
 
-Response:
-
-```json
-{
-  "status": "queued",
-  "eventId": "1710000000000-0",
-  "userId": "1",
-  "itemId": "1"
-}
-```
-
-### Metrics
+Watch progress:
 
 ```bash
-curl "http://localhost:8000/metrics/1?k=10"
+curl -X POST http://localhost:8080/interact/watch_progress \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"itemId":356,"completionRate":0.75,"source":"demo"}'
 ```
 
-Metrics hiện tại gồm:
+Metrics:
 
-- `precisionAtK`: mock vì chưa có offline evaluation split.
-- `diversityScore`: tính từ độ đa dạng tag/genre trong các item user tương tác gần đây.
-
-## Local Data Import Details
-
-Importer xử lý MovieLens như sau:
-
-- `movies.csv`
-  - tạo `items`.
-  - parse `genres` từ chuỗi `Adventure|Comedy`.
-- `ratings.csv`
-  - tạo `users`.
-  - tạo `interactions` loại `rate`.
-  - tính `avgRating`, `ratingCount`, `popularity`.
-- `tags.csv`
-  - gom free-text tags cho từng movie.
-  - đưa tags vào `items.tags` để content/session intent dùng.
-- `links.csv`
-  - map `imdbId`, `tmdbId`.
-
-Embedding hiện đang mock bằng vector random deterministic 1536 chiều dựa trên text:
-
-```text
-title + genres + tags
+```bash
+curl "http://localhost:8080/metrics/1?k=10"
 ```
 
-Trong production có thể thay bằng OpenAI/Cohere embedding thật tại:
+## Presentation Script
 
-```text
-app/services/embeddings.py
+Use this order in a live demo:
+
+1. **Dataset**: MovieLens users, movies, ratings, tags.
+2. **Architecture**: FastAPI, MongoDB, Redis cache, Redis Stream worker.
+3. **Search**: Open `/search`; popular appears before any query.
+4. **Search query**: Search `matrix`, explain hybrid search + poster enrichment.
+5. **Detail page**: Open a movie, show current rating/watch summary.
+6. **Feedback loop**: Rate 5 stars, Complete, Share.
+7. **Worker**: Explain event is queued, worker updates interactions and profile.
+8. **Recommendation refresh**: Go back to dashboard and show rails refresh.
+9. **Algorithm**: Explain Content, Collaborative, Hybrid, Trending.
+10. **Production concerns**: cache, timeout fallback, exploration, negative signals.
+
+## Troubleshooting
+
+### `/interact` returns queued but summary does not change
+
+Worker is probably not running:
+
+```bash
+python -m app.background.interaction_worker
 ```
+
+### Recommendations look stale
+
+Clear Redis cache for current user or wait TTL:
+
+```bash
+python -c "import asyncio; from app.services.cache import invalidate_user_cache; asyncio.run(invalidate_user_cache(1))"
+```
+
+### `$vectorSearch` fails
+
+Use Atlas or Atlas Local:
+
+```bash
+docker compose up -d
+```
+
+### Local recommendation query is slow
+
+Increase:
+
+```env
+INFRA_TIMEOUT_MS=1000
+```
+
+The app still has fallbacks, but low timeouts can force popularity-based results.
 
 ## Tests
 
@@ -575,53 +549,15 @@ app/services/embeddings.py
 pytest
 ```
 
-Hiện tests kiểm tra:
+Current tests cover:
 
+- supported interaction types.
+- watch progress payload aliases.
 - implicit feedback weighting.
 - time decay.
-- naive/aware datetime compatibility.
-- multi-objective reranking.
-- recommendation routes được register.
+- reranking.
+- route registration.
 
-## Troubleshooting
+## Dataset Credit
 
-### `$vectorSearch` không chạy
-
-Bạn đang dùng MongoDB Community thường. Hãy dùng:
-
-```bash
-docker compose up -d
-```
-
-Compose file dùng image:
-
-```text
-mongodb/mongodb-atlas-local:latest
-```
-
-### API trả popular movies thay vì vector recommendations
-
-Có thể do:
-
-- chưa chạy `python scripts/seed.py`.
-- chưa có vector index.
-- MongoDB Atlas Local chưa sẵn sàng.
-- timeout 200ms quá thấp với máy local.
-
-Thử tăng:
-
-```env
-INFRA_TIMEOUT_MS=1000
-```
-
-### `/interact` trả queued nhưng dữ liệu chưa cập nhật
-
-Kiểm tra worker đã chạy chưa:
-
-```bash
-python -m app.background.interaction_worker
-```
-
-## Notes
-
-MovieLens `ml-latest-small` là dataset phục vụ development/education. Nếu dùng cho báo cáo hoặc publication, hãy đọc kỹ license trong `data/README.txt` và cite GroupLens theo hướng dẫn của họ.
+This project uses MovieLens `ml-latest-small` from GroupLens. For academic or public presentation, cite GroupLens according to `data/README.txt`.

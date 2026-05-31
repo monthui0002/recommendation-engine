@@ -15,8 +15,41 @@ from app.utils import ensure_aware_utc, ensure_object_id, serialize_doc, utcnow
 
 
 settings = get_settings()
-INTERACTION_WEIGHTS = {"view": 1.0, "click": 2.0, "purchase": 5.0}
+INTERACTION_WEIGHTS = {
+    # Exposure only: used for CTR / negative sampling, never as positive preference.
+    "impression": 0.0,
+    "click": 2.0,
+    "watchlist_add": 4.0,
+    "watch_start": 3.0,
+    "watch_progress": 3.5,
+    "watch_complete": 6.0,
+    "watchlist_remove": -2.0,
+    "like": 5.0,
+    "dislike": -4.0,
+    "hide": -8.0,
+    "search_click": 2.5,
+    "share": 4.0,
+}
 TIME_DECAY_LAMBDA = 0.1
+MIN_TIME_DECAY_FACTOR = 0.05
+RECENT_PROFILE_WEIGHT = 0.45
+POSITIVE_RATING_THRESHOLD = 3.5
+POSITIVE_RATING_WEIGHT_THRESHOLD = POSITIVE_RATING_THRESHOLD * 2
+EXPOSURE_ONLY_TYPES = {"impression"}
+ENGAGEMENT_TYPES = [
+    "click",
+    "watchlist_add",
+    "watch_start",
+    "watch_progress",
+    "watch_complete",
+    "rate",
+    "like",
+    "search_click",
+    "share",
+]
+POSITIVE_NON_RATING_TYPES = [
+    interaction_type for interaction_type in ENGAGEMENT_TYPES if interaction_type != "rate"
+]
 
 
 def implicit_weight(interaction_type: str, score: float | None = None) -> float:
@@ -25,12 +58,46 @@ def implicit_weight(interaction_type: str, score: float | None = None) -> float:
     return INTERACTION_WEIGHTS.get(interaction_type, 1.0)
 
 
+def should_update_positive_profile(interaction_type: str, weighted_score: float) -> bool:
+    if interaction_type == "rate":
+        return weighted_score >= POSITIVE_RATING_WEIGHT_THRESHOLD
+    return interaction_type in POSITIVE_NON_RATING_TYPES and weighted_score > 0
+
+
+def positive_engagement_filter() -> dict[str, Any]:
+    return {
+        "type": {"$in": ENGAGEMENT_TYPES},
+        "$or": [
+            {"type": {"$in": POSITIVE_NON_RATING_TYPES}},
+            {"type": "rate", "score": {"$gte": POSITIVE_RATING_THRESHOLD}},
+        ],
+    }
+
+
 def decay_score(score: float, timestamp: Any) -> float:
     timestamp = ensure_aware_utc(timestamp)
     if not timestamp:
         return score
     days = max((utcnow() - timestamp).total_seconds() / 86400, 0)
-    return score * math.exp(-TIME_DECAY_LAMBDA * days)
+    return score * max(math.exp(-TIME_DECAY_LAMBDA * days), MIN_TIME_DECAY_FACTOR)
+
+
+def blend_embeddings(
+    long_term: list[float],
+    recent: list[float],
+    recent_weight: float = RECENT_PROFILE_WEIGHT,
+) -> list[float]:
+    if not long_term:
+        return recent
+    if not recent:
+        return long_term
+    if len(long_term) != len(recent):
+        return long_term
+    long_term_weight = 1 - recent_weight
+    return [
+        (long_term[index] * long_term_weight) + (recent[index] * recent_weight)
+        for index in range(len(long_term))
+    ]
 
 
 def public_item(doc: dict[str, Any]) -> dict[str, Any]:
@@ -40,13 +107,19 @@ def public_item(doc: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
-async def seen_item_ids(user_id: ObjectId, since_days: int | None = None) -> list[ObjectId]:
+async def seen_item_ids(
+    user_id: ObjectId,
+    since_days: int | None = None,
+    include_impressions: bool = False,
+) -> list[ObjectId]:
     query: dict[str, Any] = {"userId": user_id}
     if since_days is not None:
         query["timestamp"] = {"$gte": utcnow() - timedelta(days=since_days)}
+    if not include_impressions:
+        query["type"] = {"$nin": list(EXPOSURE_ONLY_TYPES)}
     cursor = db.interactions.find(query, {"itemId": 1})
     try:
-        docs = await with_timeout(cursor.to_list(length=5000))
+        docs = await with_timeout(cursor.to_list(length=5000), timeout_ms=2000)
     except Exception:
         return []
     return [doc["itemId"] for doc in docs]
@@ -54,7 +127,12 @@ async def seen_item_ids(user_id: ObjectId, since_days: int | None = None) -> lis
 
 async def interaction_count(user_id: ObjectId) -> int:
     try:
-        return await with_timeout(db.interactions.count_documents({"userId": user_id}))
+        return await with_timeout(
+            db.interactions.count_documents(
+                {"userId": user_id, "type": {"$nin": list(EXPOSURE_ONLY_TYPES)}}
+            ),
+            timeout_ms=2000,
+        )
     except Exception:
         return 0
 
@@ -62,7 +140,7 @@ async def interaction_count(user_id: ObjectId) -> int:
 async def top_popular_items(limit: int = 20) -> list[dict[str, Any]]:
     try:
         cursor = db.items.find({"available": True}).sort("popularity", -1).limit(limit)
-        docs = await with_timeout(cursor.to_list(length=limit))
+        docs = await with_timeout(cursor.to_list(length=limit), timeout_ms=3000)
     except Exception:
         return []
     return [
@@ -74,7 +152,8 @@ async def top_popular_items(limit: int = 20) -> list[dict[str, Any]]:
 async def get_user_profile_embedding(user_id: ObjectId) -> list[float]:
     try:
         profile = await with_timeout(
-            db.user_profiles.find_one({"userId": user_id}, {"embedding": 1})
+            db.user_profiles.find_one({"userId": user_id}, {"embedding": 1}),
+            timeout_ms=2000,
         )
     except Exception:
         return []
@@ -84,13 +163,18 @@ async def get_user_profile_embedding(user_id: ObjectId) -> list[float]:
 
 async def recent_average_embedding(user_id: ObjectId) -> list[float]:
     try:
-        recent = db.interactions.find({"userId": user_id}).sort("timestamp", -1).limit(5)
-        recent_docs = await with_timeout(recent.to_list(length=5))
+        recent = (
+            db.interactions.find({"userId": user_id, **positive_engagement_filter()})
+            .sort("timestamp", -1)
+            .limit(5)
+        )
+        recent_docs = await with_timeout(recent.to_list(length=5), timeout_ms=2000)
         recent_item_ids = [doc["itemId"] for doc in recent_docs]
         recent_items = await with_timeout(
             db.items.find(
                 {"_id": {"$in": recent_item_ids}, "embedding": {"$exists": True}}
-            ).to_list(length=5)
+            ).to_list(length=5),
+            timeout_ms=2000,
         )
     except Exception:
         return []
@@ -109,9 +193,9 @@ async def content_based_rec(
         return await top_popular_items(limit)
 
     seen_ids = await seen_item_ids(user_oid)
-    query_vector = await get_user_profile_embedding(user_oid)
-    if not query_vector:
-        query_vector = await recent_average_embedding(user_oid)
+    long_term_vector = await get_user_profile_embedding(user_oid)
+    recent_vector = await recent_average_embedding(user_oid)
+    query_vector = blend_embeddings(long_term_vector, recent_vector)
     if not query_vector:
         return await top_popular_items(limit)
 
@@ -133,11 +217,16 @@ async def content_based_rec(
         docs = await with_timeout(db.items.aggregate(pipeline).to_list(length=limit))
     except Exception:
         try:
-            docs = await with_timeout(local_vector_search(query_vector, seen_ids, limit))
+            docs = await with_timeout(
+                local_vector_search(query_vector, seen_ids, limit),
+                timeout_ms=8000,
+            )
         except Exception:
             return await top_popular_items(limit)
 
     recs = [{"item": public_item(doc), "score": float(doc.get("recScore", 0)), "source": "content"} for doc in docs]
+    if not recs:
+        return await top_popular_items(limit)
 
     # Genre/tag affinity boost — personalises beyond pure embedding proximity
     affinity = await user_genre_affinity(user_oid)
@@ -159,33 +248,44 @@ async def collaborative_rec(
         return await top_popular_items(limit)
 
     seen_ids = await seen_item_ids(user_oid)
+    try:
+        user_positive_docs = await with_timeout(
+            db.interactions.find(
+                {"userId": user_oid, **positive_engagement_filter()},
+                {"itemId": 1},
+            )
+            .sort("timestamp", -1)
+            .limit(500)
+            .to_list(length=500),
+            timeout_ms=1500,
+        )
+    except Exception:
+        return await top_popular_items(limit)
+
+    user_item_ids = list({doc["itemId"] for doc in user_positive_docs})
+    if len(user_item_ids) < 3:
+        return await top_popular_items(limit)
+
     similar_users_pipeline = [
-        {"$match": {"userId": user_oid}},
         {
-            "$lookup": {
-                "from": "interactions",
-                "let": {"item_id": "$itemId", "current_user": "$userId"},
-                "pipeline": [
-                    {
-                        "$match": {
-                            "$expr": {
-                                "$and": [
-                                    {"$eq": ["$itemId", "$$item_id"]},
-                                    {"$ne": ["$userId", "$$current_user"]},
-                                ]
-                            }
-                        }
-                    }
-                ],
-                "as": "otherInteractions",
+            "$match": {
+                "itemId": {"$in": user_item_ids},
+                "userId": {"$ne": user_oid},
+                **positive_engagement_filter(),
             }
         },
-        {"$unwind": "$otherInteractions"},
         {
             "$group": {
-                "_id": "$otherInteractions.userId",
+                "_id": "$userId",
                 "overlap": {"$sum": 1},
-                "similarity": {"$sum": {"$ifNull": ["$otherInteractions.score", 1]}},
+                "similarity": {
+                    "$sum": {
+                        "$ifNull": [
+                            "$weightedScore",
+                            {"$ifNull": ["$score", 1]},
+                        ]
+                    }
+                },
             }
         },
         {"$addFields": {"similarity": {"$multiply": ["$similarity", "$overlap"]}}},
@@ -194,31 +294,34 @@ async def collaborative_rec(
     ]
     try:
         similar_users = await with_timeout(
-            db.interactions.aggregate(similar_users_pipeline).to_list(length=30)
+            db.interactions.aggregate(similar_users_pipeline).to_list(length=30),
+            timeout_ms=3000,
         )
     except Exception:
-        return []
+        return await top_popular_items(limit)
     if not similar_users:
-        return []
+        return await top_popular_items(limit)
 
     similarity_by_user = {doc["_id"]: float(doc.get("similarity", 1)) for doc in similar_users}
     similar_user_ids = list(similarity_by_user.keys())
-    liked_types = ["click", "purchase", "rate"]
     cursor = db.interactions.find(
         {
             "userId": {"$in": similar_user_ids},
             "itemId": {"$nin": seen_ids},
-            "type": {"$in": liked_types},
+            **positive_engagement_filter(),
         }
     )
 
     scores: dict[ObjectId, dict[str, Any]] = {}
     try:
-        collab_docs = await with_timeout(cursor.to_list(length=5000))
+        collab_docs = await with_timeout(cursor.to_list(length=5000), timeout_ms=3000)
     except Exception:
-        return []
+        return await top_popular_items(limit)
     for doc in collab_docs:
-        base = implicit_weight(doc["type"], doc.get("score"))
+        base = doc.get("weightedScore")
+        if base is None:
+            base = implicit_weight(doc["type"], doc.get("score"))
+        base = float(base)
         # Temporal dynamics: recent positive behavior should carry more collaborative weight.
         weighted = decay_score(base * similarity_by_user.get(doc["userId"], 1), doc.get("timestamp"))
         entry = scores.setdefault(
@@ -232,15 +335,16 @@ async def collaborative_rec(
             entry["lastInteraction"] = doc_timestamp
 
     if not scores:
-        return []
+        return await top_popular_items(limit)
 
     top_ids = sorted(scores, key=lambda item_id: scores[item_id]["score"], reverse=True)[: limit * 3]
     try:
         items = await with_timeout(
-            db.items.find({"_id": {"$in": top_ids}, "available": True}).to_list(length=len(top_ids))
+            db.items.find({"_id": {"$in": top_ids}, "available": True}).to_list(length=len(top_ids)),
+            timeout_ms=1500,
         )
     except Exception:
-        return []
+        return await top_popular_items(limit)
     by_id = {item["_id"]: item for item in items}
     recs = []
     for item_id in top_ids:
@@ -256,6 +360,8 @@ async def collaborative_rec(
             )
         if len(recs) >= limit:
             break
+    if not recs:
+        return await top_popular_items(limit)
     return await apply_context_boost(recs, context)
 
 
@@ -282,8 +388,8 @@ async def hybrid_rec(
     if intent_tags:
         content_weight, collab_weight = max(content_weight, 0.75), min(collab_weight, 0.25)
     merged: dict[str, dict[str, Any]] = {}
-    add_weighted_candidates(merged, content, content_weight)
-    add_weighted_candidates(merged, collab, collab_weight)
+    add_weighted_candidates(merged, normalize_candidate_scores(content), content_weight)
+    add_weighted_candidates(merged, normalize_candidate_scores(collab), collab_weight)
 
     ranked = rerank_multi_objective(list(merged.values()), intent_tags)
 
@@ -300,6 +406,7 @@ async def hybrid_rec(
 
     # MMR diversity reranking — reduce genre/tag cluster redundancy
     diverse = mmr_rerank(filtered, lambda_=0.7, limit=limit * 2)
+    diverse = await fill_with_popular(diverse, limit)
     explored = await exploration_replace(user_oid, diverse[:limit], limit, rec_type)
     return explored[:limit]
 
@@ -318,15 +425,41 @@ def add_weighted_candidates(
         merged[item_id]["sources"].append(candidate.get("source", "unknown"))
 
 
+def normalize_candidate_scores(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not candidates:
+        return []
+    scores = [float(candidate.get("score", 0.0) or 0.0) for candidate in candidates]
+    min_score = min(scores)
+    max_score = max(scores)
+    if math.isclose(max_score, min_score):
+        return [dict(candidate, score=1.0) for candidate in candidates]
+
+    normalized = []
+    for candidate in candidates:
+        score = float(candidate.get("score", 0.0) or 0.0)
+        normalized.append(dict(candidate, score=(score - min_score) / (max_score - min_score)))
+    return normalized
+
+
 async def filtering_layer(user_id: ObjectId, recs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    recent_seen = {str(item_id) for item_id in await seen_item_ids(user_id, since_days=7)}
+    if not recs:
+        return []
+    recent_seen = {
+        str(item_id)
+        for item_id in await seen_item_ids(user_id, since_days=7)
+    }
+    hidden = {
+        str(item_id)
+        for item_id in await negative_item_ids(user_id, {"hide", "dislike"})
+    }
     item_ids = [ensure_object_id(rec["item"]["id"]) for rec in recs]
     try:
         available_docs = await with_timeout(
             db.items.find(
                 {"_id": {"$in": item_ids}, "available": True},
                 {"_id": 1},
-            ).to_list(length=len(item_ids))
+            ).to_list(length=len(item_ids)),
+            timeout_ms=2000,
         )
     except Exception:
         return recs
@@ -334,8 +467,39 @@ async def filtering_layer(user_id: ObjectId, recs: list[dict[str, Any]]) -> list
     return [
         rec
         for rec in recs
-        if rec["item"]["id"] in available_ids and rec["item"]["id"] not in recent_seen
+        if rec["item"]["id"] in available_ids
+        and rec["item"]["id"] not in recent_seen
+        and rec["item"]["id"] not in hidden
     ]
+
+
+async def fill_with_popular(recs: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if len(recs) >= limit:
+        return recs
+    existing_ids = {rec["item"]["id"] for rec in recs}
+    popular = await top_popular_items(limit * 2)
+    for rec in popular:
+        if rec["item"]["id"] in existing_ids:
+            continue
+        recs.append(rec)
+        existing_ids.add(rec["item"]["id"])
+        if len(recs) >= limit:
+            break
+    return recs
+
+
+async def negative_item_ids(user_id: ObjectId, negative_types: set[str]) -> list[ObjectId]:
+    try:
+        docs = await with_timeout(
+            db.interactions.find(
+                {"userId": user_id, "type": {"$in": list(negative_types)}},
+                {"itemId": 1},
+            ).to_list(length=5000),
+            timeout_ms=2000,
+        )
+    except Exception:
+        return []
+    return [doc["itemId"] for doc in docs]
 
 
 async def apply_context_boost(
@@ -348,7 +512,10 @@ async def apply_context_boost(
     except ValueError:
         return recs
     try:
-        context_item = await with_timeout(db.items.find_one({"_id": context_oid}, {"tags": 1}))
+        context_item = await with_timeout(
+            db.items.find_one({"_id": context_oid}, {"tags": 1}),
+            timeout_ms=2000,
+        )
     except Exception:
         return recs
     if not context_item:
@@ -431,9 +598,14 @@ async def session_intent_tags(user_id: ObjectId) -> set[str]:
     try:
         recent = await with_timeout(
             db.interactions.find(
-                {"userId": user_id, "timestamp": {"$gte": since}},
+                {
+                    "userId": user_id,
+                    "timestamp": {"$gte": since},
+                    **positive_engagement_filter(),
+                },
                 {"itemId": 1},
-            ).to_list(length=20)
+            ).to_list(length=20),
+            timeout_ms=2000,
         )
         if len(recent) < 3:
             return set()
@@ -441,7 +613,8 @@ async def session_intent_tags(user_id: ObjectId) -> set[str]:
             db.items.find(
                 {"_id": {"$in": [doc["itemId"] for doc in recent]}},
                 {"tags": 1},
-            ).to_list(length=20)
+            ).to_list(length=20),
+            timeout_ms=2000,
         )
     except Exception:
         return set()
@@ -487,9 +660,10 @@ def freshness_boost(created_at: Any) -> float:
 async def local_vector_search(
     query_vector: list[float], seen_ids: list[ObjectId], limit: int
 ) -> list[dict[str, Any]]:
+    candidate_limit = max(min(limit * 40, 700), 250)
     candidates = await db.items.find(
         {"_id": {"$nin": seen_ids}, "available": True, "embedding": {"$exists": True}}
-    ).to_list(length=1000)
+    ).to_list(length=candidate_limit)
     scored = []
     for item in candidates:
         embedding = item.get("embedding") or []
@@ -577,7 +751,8 @@ async def user_genre_affinity(user_id: ObjectId) -> dict[str, float]:
             db.interactions.find({"userId": user_id})
             .sort("timestamp", -1)
             .limit(200)
-            .to_list(length=200)
+            .to_list(length=200),
+            timeout_ms=2000,
         )
     except Exception:
         return {}
@@ -589,7 +764,8 @@ async def user_genre_affinity(user_id: ObjectId) -> dict[str, float]:
         items = await with_timeout(
             db.items.find(
                 {"_id": {"$in": item_ids}}, {"genres": 1, "tags": 1}
-            ).to_list(length=len(item_ids))
+            ).to_list(length=len(item_ids)),
+            timeout_ms=2000,
         )
     except Exception:
         return {}
@@ -600,8 +776,15 @@ async def user_genre_affinity(user_id: ObjectId) -> dict[str, float]:
         item = item_map.get(interaction["itemId"])
         if not item:
             continue
-        weight = implicit_weight(interaction.get("type", "view"), interaction.get("score"))
+        if (
+            interaction.get("type") == "rate"
+            and float(interaction.get("score") or 0) < POSITIVE_RATING_THRESHOLD
+        ):
+            continue
+        weight = implicit_weight(interaction.get("type", "impression"), interaction.get("score"))
         weight = decay_score(weight, interaction.get("timestamp"))
+        if weight <= 0 or interaction.get("type") in EXPOSURE_ONLY_TYPES:
+            continue
         for label in (item.get("genres") or []) + (item.get("tags") or []):
             affinity[label] = affinity.get(label, 0.0) + weight
 
@@ -643,12 +826,22 @@ async def trending_items(
     seen_ids = await seen_item_ids(user_id)
 
     pipeline: list[dict[str, Any]] = [
-        {"$match": {"timestamp": {"$gte": since}, "itemId": {"$nin": seen_ids}}},
+        {
+            "$match": {
+                "timestamp": {"$gte": since},
+                "itemId": {"$nin": seen_ids},
+                **positive_engagement_filter(),
+            }
+        },
         {
             "$group": {
                 "_id": "$itemId",
                 "interactionCount": {"$sum": 1},
-                "totalScore": {"$sum": {"$ifNull": ["$score", 1.0]}},
+                "totalScore": {
+                    "$sum": {
+                        "$ifNull": ["$weightedScore", {"$ifNull": ["$score", 1.0]}]
+                    }
+                },
             }
         },
         {"$sort": {"interactionCount": -1, "totalScore": -1}},

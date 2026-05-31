@@ -13,28 +13,27 @@ const Navbar = () => {
     <div className="Navbar">
       <div className="container">
         <Link to="/">
-          <h1>Movie Search App</h1>
+          <h1>MovieLens Recommender</h1>
         </Link>
-        {location.pathname === "/" ? (
-          <div className="navbar-right">
-            <Form />
-            <div className="user-selector">
-              <label htmlFor="userId">User</label>
-              <input
-                id="userId"
-                type="number"
-                min="1"
-                max="610"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-              />
-            </div>
+        <div className="navbar-right">
+          <Form />
+          <div className="user-selector">
+            <label htmlFor="userId">User</label>
+            <input
+              id="userId"
+              type="number"
+              min="1"
+              max="610"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+            />
           </div>
-        ) : (
-          <Link to="/" className="go-home">
-            <KeyboardBackspaceIcon /> Home Page
-          </Link>
-        )}
+          {location.pathname !== "/" && (
+            <Link to="/" className="go-home">
+              <KeyboardBackspaceIcon /> Home
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );

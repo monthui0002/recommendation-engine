@@ -1,23 +1,41 @@
-import React, { useContext, useRef } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { AppContext } from "../context";
 import SearchIcon from "@material-ui/icons/Search";
 import "../styles/Form.css";
+import { useHistory } from "react-router-dom";
 
-const Form = () => {
-  const { setSearchMovie } = useContext(AppContext);
+const Form = ({ variant = "compact", autoFocus = false }) => {
+  const { searchMovie, setSearchMovie } = useContext(AppContext);
   const inputRef = useRef();
+  const history = useHistory();
+  const [value, setValue] = useState(searchMovie);
 
-  const handleSubmit = (e) => e.preventDefault();
+  useEffect(() => {
+    setValue(searchMovie);
+  }, [searchMovie]);
 
-  const searchItems = () => setSearchMovie(inputRef.current.value);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setSearchMovie(value);
+    if (value.trim()) history.push("/search");
+  };
+
+  const searchItems = (event) => {
+    setValue(event.target.value);
+    if (variant === "large") {
+      setSearchMovie(event.target.value);
+    }
+  };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form className={`SearchForm SearchForm--${variant}`} onSubmit={handleSubmit}>
       <input
         type="text"
-        placeholder="search movies"
+        placeholder="Search movies, genres, tags..."
+        value={value}
         ref={inputRef}
         onChange={searchItems}
+        autoFocus={autoFocus}
       />
       <button type="submit">
         <SearchIcon />

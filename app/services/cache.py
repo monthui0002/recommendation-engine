@@ -26,19 +26,29 @@ async def with_cache(key: str, ttl: int, fn: Callable[[], Awaitable[Any]]) -> An
     return value
 
 
-async def invalidate_user_cache(user_id: str) -> None:
-    pattern = f"rec:{user_id}:*"
+async def invalidate_user_cache(*user_ids: str | int | None) -> None:
     cursor = 0
     keys: list[str] = []
+    patterns = [f"rec:{user_id}:*" for user_id in {str(uid) for uid in user_ids if uid is not None}]
+    if not patterns:
+        return
+
     while True:
         cursor, batch = await with_timeout(
-            redis_client.scan(cursor=cursor, match=pattern, count=100)
+            redis_client.scan(cursor=cursor, match="rec:*", count=100)
         )
-        keys.extend(batch)
+        for key in batch:
+            if any(_matches_rec_pattern(key, pattern) for pattern in patterns):
+                keys.append(key)
         if cursor == 0:
             break
     if keys:
         await with_timeout(redis_client.delete(*keys))
+
+
+def _matches_rec_pattern(key: str, pattern: str) -> bool:
+    prefix = pattern.removesuffix("*")
+    return key.startswith(prefix)
 
 
 async def close_redis_connection() -> None:

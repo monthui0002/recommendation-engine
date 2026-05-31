@@ -5,6 +5,7 @@ import Movie from "./components/Movie";
 import Navbar from "./components/Navbar";
 import Error from "./components/Error";
 import { AppProvider } from "./context";
+import SearchPage from "./components/SearchPage";
 
 const App = () => {
   return (
@@ -14,6 +15,7 @@ const App = () => {
           <Navbar />
           <Switch>
             <Route exact path="/" component={Home} />
+            <Route exact path="/search" component={SearchPage} />
             <Route exact path="/movies/:id" component={Movie} />
             <Route component={Error} />
           </Switch>
