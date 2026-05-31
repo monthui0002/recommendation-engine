@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import close_mongo_connection, create_indexes
 from app.routes.interactions import router as interactions_router
+from app.routes.items import router as items_router
 from app.routes.metrics import router as metrics_router
 from app.routes.recommendations import router as recommendations_router
 from app.routes.search import router as search_router
@@ -37,6 +38,7 @@ app.add_middleware(
 
 app.include_router(recommendations_router)
 app.include_router(interactions_router)
+app.include_router(items_router)
 app.include_router(metrics_router)
 app.include_router(search_router)
 

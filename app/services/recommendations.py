@@ -15,7 +15,17 @@ from app.utils import ensure_aware_utc, ensure_object_id, serialize_doc, utcnow
 
 
 settings = get_settings()
-INTERACTION_WEIGHTS = {"view": 1.0, "click": 2.0, "purchase": 5.0}
+INTERACTION_WEIGHTS = {
+    "impression":       0.2,   # seen but not clicked
+    "view":             1.0,   # page-level view
+    "click":            2.0,   # generic click
+    "rec_click":        2.5,   # click from a recommendation row (attribution signal)
+    "watchlist_add":    4.0,   # explicit save intent
+    "purchase":         5.0,
+    # negative signals
+    "watchlist_remove": -0.5,  # removed from watchlist
+    "dismiss":          -2.0,  # "not interested" explicit rejection
+}
 TIME_DECAY_LAMBDA = 0.1
 
 
@@ -203,7 +213,7 @@ async def collaborative_rec(
 
     similarity_by_user = {doc["_id"]: float(doc.get("similarity", 1)) for doc in similar_users}
     similar_user_ids = list(similarity_by_user.keys())
-    liked_types = ["click", "purchase", "rate"]
+    liked_types = ["click", "rec_click", "purchase", "rate", "watchlist_add"]
     cursor = db.interactions.find(
         {
             "userId": {"$in": similar_user_ids},

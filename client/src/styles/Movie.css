@@ -1,57 +1,178 @@
 .Movie {
-  max-width: 998px;
+  max-width: 900px;
   width: 90vw;
-  margin: 50px auto;
+  margin: 50px auto 80px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 50px;
+  gap: 48px;
+  align-items: flex-start;
 }
 
 .movie-poster {
-  margin-right: 50px;
-  flex: 1;
+  flex: 0 0 240px;
+}
+
+.movie-poster img {
+  width: 100%;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+  display: block;
 }
 
 .movie-text {
-  flex: 3;
-  margin-top: 10px;
-  align-self: flex-start;
-  color: rgba(255, 255, 255, 0.8);
+  flex: 1;
+  padding-top: 6px;
+}
+
+.movie-text h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, #ffffff 30%, rgba(180, 170, 255, 0.75) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .movie-text .rating {
-  margin: 5px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 200, 0, 0.12);
+  border: 1px solid rgba(255, 200, 0, 0.28);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 215, 60, 0.9);
+  margin-bottom: 0;
+}
+
+/* row that holds rating pill + watchlist button side by side */
+.movie-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.watchlist-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  padding: 5px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.watchlist-btn svg {
+  font-size: 1rem;
+}
+.watchlist-btn:hover {
+  background: rgba(220, 60, 100, 0.18);
+  border-color: rgba(220, 60, 100, 0.55);
+  color: #ff6b9d;
+}
+.watchlist-btn.active {
+  background: rgba(220, 60, 100, 0.22);
+  border-color: rgba(220, 60, 100, 0.65);
+  color: #ff6b9d;
+}
+
+/* ---- star rating ---- */
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.star-rating .star {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 1.25rem;
+  transition: color 0.15s ease, transform 0.12s ease;
+}
+.star-rating .star svg {
+  font-size: 1.2rem;
+}
+.star-rating .star.hover,
+.star-rating .star.filled {
+  color: #ffc107;
+}
+.star-rating .star:hover {
+  transform: scale(1.18);
+}
+
+.star-rating .rating-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffc107;
+  margin-left: 6px;
+  opacity: 0.85;
 }
 
 .movie-text .plot {
-  margin: 40px 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.88rem;
+  line-height: 1.75;
+  margin: 0 0 26px;
 }
 
 .movie-text p {
-  font-weight: 400;
-  margin: 10px 0;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 9px 0;
+  line-height: 1.55;
 }
+
 .movie-text span {
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 0.2px;
 }
 
 .error-img {
   width: 100%;
+  border-radius: 14px;
+  opacity: 0.35;
 }
 
 @media (max-width: 768px) {
   .Movie {
     flex-direction: column;
+    gap: 28px;
+    margin-top: 30px;
   }
+
   .movie-poster {
-    margin: auto;
-    margin-bottom: 20px;
+    flex: none;
+    width: 180px;
+    margin: 0 auto;
+  }
+
+  .movie-text h1 {
+    font-size: 1.4rem;
   }
 }
+
 @media (max-width: 330px) {
-  .movie-poster img {
+  .movie-poster {
     width: 90vw;
   }
+}
+
+/* ── Similar movies row below the detail card ── */
+.similar-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 28px;
+  margin-top: 0;
+  padding-bottom: 60px;
 }

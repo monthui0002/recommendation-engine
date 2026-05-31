@@ -1,3 +1,5 @@
+import logging
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 from pymongo.operations import SearchIndexModel
@@ -6,10 +8,31 @@ import redis.asyncio as redis
 from app.core.config import get_settings
 
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
 db: AsyncIOMotorDatabase = mongo_client[settings.mongodb_db]
 redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+
+
+async def check_connections() -> None:
+    """Ping MongoDB and Redis; log results to stdout."""
+    # MongoDB
+    try:
+        await mongo_client.admin.command("ping")
+        server_info = await mongo_client.server_info()
+        version = server_info.get("version", "unknown")
+        print("[MongoDB] Connected — server %s | db=%s", version, settings.mongodb_db)
+    except Exception as exc:
+        print("[MongoDB] Connection FAILED: %s", exc)
+
+    # Redis
+    try:
+        pong = await redis_client.ping()
+        print("[Redis]   Connected — PING=%s | url=%s", pong, settings.redis_url)
+    except Exception as exc:
+        print("[Redis]   Connection FAILED: %s", exc)
 
 
 async def create_indexes() -> None:
@@ -76,4 +99,6 @@ async def create_indexes() -> None:
 
 async def close_connections() -> None:
     await redis_client.aclose()
+    print("[Redis]   Connection closed.")
     mongo_client.close()
+    print("[MongoDB] Connection closed.")

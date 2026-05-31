@@ -2,21 +2,25 @@
   padding: 0;
   margin: 0;
   box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
 }
 
 ::selection {
-  color: #212121;
-  background-color: rgba(255, 255, 255, 0.8);
+  color: #fff;
+  background-color: rgba(52, 52, 187, 0.55);
 }
 
 body {
-  background-color: #212121;
-  width: 100%;
-  height: 100vh;
+  background-color: #0d0d1a;
+  background-image:
+    radial-gradient(ellipse at 15% 65%, rgba(52, 52, 187, 0.14) 0%, transparent 52%),
+    radial-gradient(ellipse at 85% 15%, rgba(110, 55, 165, 0.1) 0%, transparent 48%);
+  min-height: 100vh;
+  color: rgba(255, 255, 255, 0.85);
 }
 
+/* ── Loading ─────────────────────────────── */
 .Loading {
   width: 100%;
   height: 100vh;
@@ -24,65 +28,91 @@ body {
   place-items: center;
 }
 
+/* ── Error ───────────────────────────────── */
 .error {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.45);
   text-align: center;
-  margin-top: 100px;
+  margin-top: 120px;
 }
 .error svg {
-  font-size: 100px;
+  font-size: 72px;
+  opacity: 0.35;
 }
 .error h1 {
-  margin: 5px;
+  margin: 14px 0 6px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
 }
 
-
+/* ── Search Results Grid ─────────────────── */
 .Home {
   max-width: 1010px;
   width: 90vw;
-  margin: auto;
-  margin-top: 70px;
+  margin: 28px auto 10px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  grid-gap: 30px 20px;
-  padding-bottom: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 22px 14px;
 }
 
+/* ── Section divider labels ──────────────── */
+.section-label {
+  max-width: 1010px;
+  width: 90vw;
+  margin: 36px auto 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.22);
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ── Recommendation Rows ─────────────────── */
 .RecSection {
   max-width: 1010px;
   width: 90vw;
-  margin: 10px auto 36px;
+  margin: 24px auto 8px;
+  animation: fadeUp 0.4s ease both;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .rec-title {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   text-transform: uppercase;
   margin-bottom: 14px;
-  padding-left: 10px;
+  padding-left: 11px;
   border-left: 3px solid #3434bb;
 }
 
 .rec-row {
   display: flex;
   overflow-x: auto;
-  gap: 20px;
+  gap: 12px;
   padding-bottom: 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .rec-row::-webkit-scrollbar {
-  height: 4px;
+  height: 3px;
 }
 
 .rec-row::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 2px;
-}
-
-.rec-row .Movies {
-  flex: 0 0 auto;
 }

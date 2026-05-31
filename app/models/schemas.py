@@ -31,6 +31,12 @@ class InteractionType(str, Enum):
     click = "click"
     purchase = "purchase"
     rate = "rate"
+    # --- new signals ---
+    rec_click = "rec_click"        # click originating from a recommendation row
+    impression = "impression"      # item was displayed in a recommendation row
+    watchlist_add = "watchlist_add"        # user saved to watchlist
+    watchlist_remove = "watchlist_remove"  # user removed from watchlist
+    dismiss = "dismiss"            # user explicitly said "not interested"
 
 
 class MongoModel(BaseModel):
@@ -84,6 +90,7 @@ class InteractionCreate(MongoModel):
     itemId: str | int | PyObjectId
     type: InteractionType
     score: Optional[float] = None
+    metadata: Optional[dict] = None  # e.g. {"recType": "hybrid"} for rec_click/dismiss
 
 
 class InteractionInDB(InteractionCreate):

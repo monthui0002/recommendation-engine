@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 import signal
 from contextlib import suppress
 from typing import Any
@@ -7,7 +9,7 @@ from bson import ObjectId
 from redis.exceptions import ResponseError
 
 from app.core.config import get_settings
-from app.core.database import close_connections, create_indexes, db, redis_client
+from app.core.database import close_connections, create_indexes, check_connections, db, redis_client
 from app.services.cache import invalidate_user_cache
 from app.services.ids import resolve_item_id, resolve_user_id
 from app.services.recommendations import implicit_weight
@@ -29,6 +31,7 @@ async def enqueue_interaction_event(payload: dict[str, Any]) -> str:
         "itemId": str(payload["itemId"]),
         "type": str(getattr(interaction_type, "value", interaction_type)),
         "score": "" if payload.get("score") is None else str(payload["score"]),
+        "metadata": json.dumps(payload.get("metadata") or {}),
         "createdAt": utcnow().isoformat(),
     }
     return await redis_client.xadd(settings.interaction_stream, event)
@@ -58,12 +61,14 @@ async def process_interaction_event(fields: dict[str, str]) -> ObjectId:
     if not user or not item:
         raise ValueError("User or item not found")
 
+    metadata = json.loads(fields.get("metadata") or "{}")
     timestamp = utcnow()
     doc = {
         "userId": user_id,
         "itemId": item_id,
         "type": interaction_type,
         "score": score,
+        "metadata": metadata,
         "weightedScore": implicit_weight(interaction_type, score),
         "timestamp": timestamp,
     }
@@ -113,6 +118,7 @@ async def update_user_profile(
 
 
 async def run_worker(consumer_name: str = "worker-1") -> None:
+    await check_connections()
     await create_indexes()
     await ensure_consumer_group()
     while not STOP.is_set():
@@ -144,6 +150,11 @@ async def run_worker(consumer_name: str = "worker-1") -> None:
 
 
 async def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         with suppress(NotImplementedError):

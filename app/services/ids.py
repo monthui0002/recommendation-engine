@@ -23,6 +23,13 @@ async def resolve_user_id(value: str | int | ObjectId) -> ObjectId:
 async def resolve_item_id(value: str | int | ObjectId) -> ObjectId:
     if isinstance(value, ObjectId):
         return value
+    # OMDB tt-prefixed IDs (e.g. "tt0803093") — look up by the imdbId field
+    if isinstance(value, str) and value.startswith("tt"):
+        clean = value[2:]  # strip "tt" → "0803093"
+        item = await db.items.find_one({"imdbId": clean}, {"_id": 1})
+        if item:
+            return item["_id"]
+    # Numeric string / int — look up by MovieLens movieId
     if is_int_like(value):
         item = await db.items.find_one({"movieId": int(value)}, {"_id": 1})
         if item:

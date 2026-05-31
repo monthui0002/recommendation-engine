@@ -3,7 +3,20 @@ import axios from "axios";
 
 export const API_ENDPOINT = `${process.env.REACT_APP_API_URL}?apikey=${process.env.REACT_APP_OMDB_API_KEY}&`;
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8080";
+export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8080";
+
+/**
+ * Fire-and-forget interaction logger.
+ * type: "view" | "click" | "rec_click" | "impression" |
+ *       "watchlist_add" | "watchlist_remove" | "dismiss" | "rate" | "purchase"
+ * metadata: arbitrary JSON, e.g. { recType: "hybrid" }
+ */
+export const logInteraction = (userId, itemId, type, metadata = {}, score = null) => {
+  if (!userId || !itemId) return;
+  const body = { userId: String(userId), itemId: String(itemId), type, metadata };
+  if (score !== null) body.score = score;
+  axios.post(`${BACKEND_URL}/interact`, body).catch(() => {}); // fire-and-forget
+};
 
 // MovieLens stores imdbId as a bare number (e.g. "114709").
 // OMDB expects the "tt"-prefixed 7-digit format ("tt0114709").
