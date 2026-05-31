@@ -1,97 +1,178 @@
 .Movies {
-  position: relative;
-  width: 100%;
-  border-radius: 10px;
+  width: 190px;
+  min-height: 342px;
   overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: var(--shadow);
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
-  display: flex;
-  flex-direction: column;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .Movies:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.07);
+  transform: translateY(-3px);
 }
 
-/* ---- dismiss button ---- */
-.dismiss-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.65);
-  border: none;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.18s ease, background 0.18s ease;
-  z-index: 2;
-}
-.Movies:hover .dismiss-btn {
-  opacity: 1;
-}
-.dismiss-btn:hover {
-  background: rgba(200, 50, 50, 0.85);
-  color: #fff;
-}
-
-/* poster wrapper — aspect-ratio keeps proportions without fixed height */
-.Movies .poster-wrap {
+.poster-wrap {
+  position: relative;
   width: 100%;
   aspect-ratio: 2 / 3;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
-  flex-shrink: 0;
+  background: #101820;
 }
 
-.Movies .poster-wrap img {
+.Movies img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
-  transition: transform 0.3s ease;
 }
 
-.Movies:hover .poster-wrap img {
-  transform: scale(1.05);
+.poster-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  background:
+    linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(16, 185, 129, 0.16)),
+    #111827;
+  color: #f8fafc;
+  text-align: center;
 }
 
-/* text section */
-.Movies .movie-info {
-  padding: 8px 10px 10px;
-  flex: 1;
+.poster-fallback span {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(15, 20, 27, 0.55);
+  font-size: 24px;
+  font-weight: 900;
 }
 
-.Movies .movie-info .title {
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 0.78rem;
-  font-weight: 600;
-  line-height: 1.35;
+.poster-fallback small {
+  align-self: start;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.rating-badge {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(15, 20, 27, 0.78);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.quick-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  gap: 6px;
+  opacity: 0;
+  transform: translateX(4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.Movies:hover .quick-actions,
+.Movies:focus-within .quick-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.quick-actions button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(15, 20, 27, 0.82);
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.quick-actions button:hover {
+  background: var(--blue);
+}
+
+.movie-copy {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+}
+
+.movie-title {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  min-height: 39px;
   overflow: hidden;
-  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.Movies .movie-info .year {
-  color: rgba(255, 255, 255, 0.33);
-  font-size: 0.7rem;
+.movie-subline,
+.score-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
-/* rec-row: fixed-width cards for horizontal scroll */
-.rec-row .Movies {
-  flex: 0 0 148px;
-  width: 148px;
+.genre-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 23px;
+}
+
+.genre-strip span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.score-footer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.score-footer strong {
+  color: #eab308;
+  font-size: 12px;
+}
+
+@media (max-width: 620px) {
+  .Movies {
+    width: 100%;
+    min-height: 0;
+  }
 }

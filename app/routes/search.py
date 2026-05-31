@@ -2,9 +2,27 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.services.search import movie_search
+from app.services.cache import with_cache
+from app.services.recommendations import top_popular_items
+from app.services.search import movie_by_imdb_id, movie_search
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+
+@router.get("/movies/popular")
+async def popular_movies(
+    limit: int = Query(20, ge=1, le=100, description="Max results to return"),
+) -> dict[str, Any]:
+    items = await with_cache(
+        f"search:popular:v1:limit={limit}",
+        300,
+        lambda: top_popular_items(limit),
+    )
+    return {
+        "type": "popular",
+        "count": len(items),
+        "items": items,
+    }
 
 
 @router.get("/movies")
@@ -36,3 +54,11 @@ async def search_movies(
         "count": len(results),
         "items": results,
     }
+
+
+@router.get("/movies/imdb/{imdb_id}")
+async def get_movie_by_imdb_id(imdb_id: str) -> dict[str, Any]:
+    movie = await movie_by_imdb_id(imdb_id)
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    return {"item": movie}

@@ -49,6 +49,8 @@ async def create_indexes() -> None:
         [("userId", ASCENDING), ("itemId", ASCENDING), ("timestamp", DESCENDING)]
     )
     await db.interactions.create_index([("userId", ASCENDING), ("timestamp", DESCENDING)])
+    await db.interactions.create_index([("itemId", ASCENDING), ("type", ASCENDING), ("userId", ASCENDING)])
+    await db.interactions.create_index([("userId", ASCENDING), ("type", ASCENDING), ("score", DESCENDING)])
     await db.explorations.create_index([("userId", ASCENDING), ("timestamp", DESCENDING)])
     await db.user_profiles.create_index([("userId", ASCENDING)], unique=True)
     await db.user_profiles.create_index([("updatedAt", DESCENDING)])

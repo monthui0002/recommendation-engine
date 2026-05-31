@@ -17,7 +17,11 @@ async def resolve_user_id(value: str | int | ObjectId) -> ObjectId:
         user = await db.users.find_one({"movielensUserId": int(value)}, {"_id": 1})
         if user:
             return user["_id"]
-    return ensure_object_id(str(value))
+    user_oid = ensure_object_id(str(value))
+    user = await db.users.find_one({"_id": user_oid}, {"_id": 1})
+    if not user:
+        raise ValueError("User not found")
+    return user_oid
 
 
 async def resolve_item_id(value: str | int | ObjectId) -> ObjectId:

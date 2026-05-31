@@ -4,11 +4,17 @@ from bson import ObjectId
 
 from app.db import db
 from app.services.ids import resolve_user_id
+from app.services.recommendations import ENGAGEMENT_TYPES
 
 
 async def metrics_for_user(user_id: str | int | ObjectId, k: int = 10) -> dict[str, float]:
     oid = await resolve_user_id(user_id)
-    interactions = await db.interactions.find({"userId": oid}).sort("timestamp", -1).limit(k).to_list(length=k)
+    interactions = (
+        await db.interactions.find({"userId": oid, "type": {"$in": ENGAGEMENT_TYPES}})
+        .sort("timestamp", -1)
+        .limit(k)
+        .to_list(length=k)
+    )
     tags: set[str] = set()
     if interactions:
         item_ids = [doc["itemId"] for doc in interactions]

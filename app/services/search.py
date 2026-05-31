@@ -185,3 +185,11 @@ async def movie_search(
         _vector_search(query_vector, limit * 2),
     )
     return _rrf_merge(text_docs, vector_docs, limit)
+
+
+async def movie_by_imdb_id(imdb_id: str) -> dict[str, Any] | None:
+    bare_imdb_id = imdb_id.removeprefix("tt")
+    doc = await db.items.find_one({"imdbId": bare_imdb_id, "available": True})
+    if not doc:
+        return None
+    return _public_item(doc)

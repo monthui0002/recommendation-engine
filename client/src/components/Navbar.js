@@ -15,23 +15,10 @@ const Navbar = () => {
     <div className="Navbar">
       <div className="container">
         <Link to="/">
-          <h1>Movie App</h1>
+          <h1>MovieLens Recommender</h1>
         </Link>
         <div className="navbar-right">
-          {location.pathname === "/" && <Form />}
-          {location.pathname !== "/" && (
-            <Link to="/" className="go-home">
-              <KeyboardBackspaceIcon /> Home
-            </Link>
-          )}
-          <Link
-            to="/watchlist"
-            className={`watchlist-nav-btn${location.pathname === "/watchlist" ? " active" : ""}`}
-            title="My Watchlist"
-          >
-            {location.pathname === "/watchlist" ? <BookmarkIcon /> : <BookmarkBorderIcon />}
-            Watchlist
-          </Link>
+          <Form />
           <div className="user-selector">
             <label htmlFor="userId">User</label>
             <input
@@ -43,6 +30,11 @@ const Navbar = () => {
               onChange={(e) => setUserId(e.target.value)}
             />
           </div>
+          {location.pathname !== "/" && (
+            <Link to="/" className="go-home">
+              <KeyboardBackspaceIcon /> Home
+            </Link>
+          )}
         </div>
       </div>
     </div>
